@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     
     # ==================== DATABASE SETTINGS ====================
     POSTGRES_USER: str = "calendaruser"
-    POSTGRES_PASSWORD: str = "calendarpass"
+    POSTGRES_PASSWORD: str = "change_me_postgres_password"
     POSTGRES_DB: str = "calendar_agent"
     POSTGRES_HOST: str = "postgres"
     POSTGRES_PORT: int = 5432
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # ==================== REDIS SETTINGS ====================
     REDIS_HOST: str = "redis"
     REDIS_PORT: int = 6379
-    REDIS_PASSWORD: str = "redispass"
+    REDIS_PASSWORD: str = "change_me_redis_password"
     REDIS_DB: int = 0
     
     @property

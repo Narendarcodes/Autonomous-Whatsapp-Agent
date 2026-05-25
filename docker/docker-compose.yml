@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-calendaruser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calendarpass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres_password}
       POSTGRES_DB: ${POSTGRES_DB:-calendar_agent}
       POSTGRES_INITDB_ARGS: "-E UTF8"
     # Port not exposed to host - only accessible within docker network
@@ -34,7 +34,7 @@ services:
     command: >
       redis-server
       --appendonly yes
-      --requirepass ${REDIS_PASSWORD:-redispass}
+      --requirepass ${REDIS_PASSWORD:-change_me_redis_password}
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
     ports:
