@@ -1,0 +1,203 @@
+version: '3.9'
+
+services:
+  # ==================== POSTGRESQL DATABASE ====================
+  postgres:
+    image: postgres:16-alpine
+    container_name: whatsapp_calendar_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-calendaruser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres_password}
+      POSTGRES_DB: ${POSTGRES_DB:-calendar_agent}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    # Port not exposed to host - only accessible within docker network
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../backend/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-calendaruser} -d ${POSTGRES_DB:-calendar_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - calendar_network
+
+  # ==================== REDIS CACHE ====================
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp_calendar_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-change_me_redis_password}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - calendar_network
+
+  # ==================== FASTAPI BACKEND (Webhook API) ====================
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: whatsapp_calendar_backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      # Database connection (override for container network)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      
+      # Redis connection (override for container network)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    
+    ports:
+      - "8000:8000"
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    
+    volumes:
+      # Mount source code for development (hot reload)
+      - ../backend/app:/app/app:ro
+      # Token storage (persistent)
+      - token_storage:/app/tokens
+      # Logs
+      - logs:/app/logs
+      # Mount Docker socket for log viewing
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+    
+    networks:
+      - calendar_network
+    
+    # Allow container to reach host machine (for Ollama)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==================== AGENT WORKER (Message Processing) ====================
+  agent_worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: whatsapp_calendar_agent_worker
+    restart: unless-stopped
+    command: python -m app.workers.agent_worker
+    env_file:
+      - ../backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    
+    volumes:
+      - ../backend/app:/app/app:ro
+      - token_storage:/app/tokens
+      - logs:/app/logs
+    
+    networks:
+      - calendar_network
+    
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==================== SCHEDULER WORKER (Proactive Notifications) ====================
+  scheduler_worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: whatsapp_calendar_scheduler_worker
+    restart: unless-stopped
+    command: python -m app.workers.scheduler_worker
+    env_file:
+      - ../backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    
+    volumes:
+      - ../backend/app:/app/app:ro
+      - token_storage:/app/tokens
+      - logs:/app/logs
+    
+    networks:
+      - calendar_network
+    
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+# ==================== VOLUMES ====================
+volumes:
+  postgres_data:
+    driver: local
+    name: whatsapp_calendar_postgres_data
+  
+  redis_data:
+    driver: local
+    name: whatsapp_calendar_redis_data
+  
+  token_storage:
+    driver: local
+    name: whatsapp_calendar_tokens
+  
+  logs:
+    driver: local
+    name: whatsapp_calendar_logs
+
+# ==================== NETWORKS ====================
+networks:
+  calendar_network:
+    driver: bridge
+    name: whatsapp_calendar_network

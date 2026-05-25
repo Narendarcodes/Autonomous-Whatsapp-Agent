@@ -1,0 +1,66 @@
+# ==========================================
+# WhatsApp AI Calendar Agent - Dependencies
+# Python 3.11+
+# ==========================================
+
+# ==================== WEB FRAMEWORK ====================
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# ==================== DATA VALIDATION ====================
+pydantic==2.6.0
+pydantic-settings==2.2.0
+pydantic[email]==2.6.0
+
+# ==================== DATABASE ====================
+# PostgreSQL
+sqlalchemy==2.0.28
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Redis
+redis==5.0.3
+hiredis==2.3.2
+
+# ==================== GOOGLE APIS ====================
+google-api-python-client==2.125.0
+google-auth==2.32.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+
+# ==================== HTTP CLIENTS ====================
+httpx==0.27.0
+requests==2.31.0
+
+# ==================== UTILITIES ====================
+python-dotenv==1.0.1
+python-dateutil==2.9.0
+
+# JSON parsing
+orjson==3.10.0
+
+# ==================== SECURITY ====================
+cryptography==42.0.5
+
+# ==================== DEVELOPMENT ====================
+# Testing
+pytest==8.1.1
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Code quality
+black==24.3.0
+flake8==7.0.0
+mypy==1.9.0
+isort==5.13.2
+
+# ==================== OPTIONAL ====================
+# Monitoring (optional)
+# prometheus-client==0.20.0
+
+# APM (optional)
+# opentelemetry-api==1.24.0
+# opentelemetry-sdk==1.24.0
