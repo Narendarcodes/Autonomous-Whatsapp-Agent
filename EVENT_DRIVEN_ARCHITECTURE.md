@@ -155,7 +155,7 @@ resolved_at          TIMESTAMP
 # Redis Streams
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_PASSWORD=change_me_redis_password
+REDIS_PASSWORD=redispass
 
 # Worker Settings
 AGENT_MAX_ITERATIONS=5

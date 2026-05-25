@@ -1,270 +1,210 @@
-"""
-Agent Worker
-Background worker that consumes messages from Redis Stream and processes them
-"""
+"""Agent worker — consumes the message_queue Redis Stream and processes messages.
 
+Run with:  python -m app.workers.agent_worker
+"""
 import asyncio
 import signal
-import sys
-from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.logging import logger
-from app.db.database import get_async_session
-from app.db.redis_client import redis_client
-from app.infrastructure.redis_streams import RedisStreamConsumer
-from app.models.user import User
+from app.core.logging import get_logger, setup_logging
+from app.db.database import AsyncSessionLocal
+from app.db.redis_client import (
+    MESSAGE_STREAM,
+    MESSAGE_STREAM_DEAD,
+    MESSAGE_STREAM_GROUP,
+    ensure_consumer_group,
+    get_redis,
+)
+from app.models.models import EventCache, PendingDecision, User
 from app.services.agent_engine import agent_engine
-from app.services.decision_resolver import decision_resolver
-from app.services.conflict_detection import ConflictDetectionService
+from app.services.calendar_service import calendar_service
+from app.services.permission_service import permission_service
+from app.services.proactive_service import proactive_service
 from app.services.whatsapp_service import whatsapp_service
 
+logger = get_logger("agent_worker")
 
-class AgentWorker:
-    """Worker that processes incoming messages from Redis Stream"""
-    
-    def __init__(self):
-        self.running = False
-        self.consumer: RedisStreamConsumer = None
-        self.conflict_service = ConflictDetectionService()
-        self._processing_count = 0  # Track in-flight messages
-        self._shutdown_timeout = 30  # seconds to wait for in-flight messages
-    
-    async def start(self):
-        """Start the worker"""
+CONSUMER_NAME = "worker-1"
+STOP = False
+
+
+def _handle_stop(*_):
+    global STOP
+    STOP = True
+    logger.info("Stop signal received")
+
+
+async def _execute_approved_decision(db, decision: PendingDecision) -> str:
+    """Carry out an action that the owner just approved."""
+    action = decision.action_type
+    proposed = decision.proposed_action or {}
+
+    user_result = await db.execute(select(User).where(User.id == decision.user_id))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return "Approved, but user record vanished — nothing to do."
+
+    if action == "create_event":
+        from dateutil import parser as date_parser
+        result = await calendar_service.create_event(
+            db,
+            user,
+            summary=proposed["summary"],
+            start_time=date_parser.parse(proposed["start_time"]),
+            end_time=date_parser.parse(proposed["end_time"]),
+            description=proposed.get("description", ""),
+            location=proposed.get("location", ""),
+            attendees=proposed.get("attendees") or [],
+            create_meet_link=bool(proposed.get("create_meet_link", False)),
+            source_chat=decision.source_chat,
+        )
+        if not result:
+            return "I tried to create the event but Google rejected it."
+
+        # Schedule reminders + check conflicts
+        event_q = await db.execute(
+            select(EventCache).where(EventCache.id == result["id"])
+        )
+        event = event_q.scalar_one()
+        await proactive_service.schedule_event_reminders(db, user, event)
+
+        msg = f"Done. Created: {result['summary']}"
+        if result.get("meet_link"):
+            msg += f"\nGoogle Meet: {result['meet_link']}"
+        return msg
+
+    if action == "delete_event":
+        ok = await calendar_service.delete_event(db, user, proposed["google_event_id"])
+        return "Deleted." if ok else "Couldn't delete it."
+
+    if action == "group_reply":
+        ok = await whatsapp_service.send_text(proposed["group_id"], proposed["reply_text"])
+        return "Posted." if ok else "Failed to post to the group."
+
+    return f"Approved but I don't know how to execute action '{action}'."
+
+
+async def _process_one(stream_id: str, fields: dict) -> None:
+    user_id = fields.get("user_id", "")
+    sender_phone = fields.get("wa_phone", "")
+    chat_id = fields.get("chat_id", "")
+    is_group = fields.get("is_group", "false") == "true"
+    group_id = fields.get("group_id", "")
+    message_text = fields.get("message_text", "")
+
+    if not message_text:
+        return
+
+    reply_to = group_id if (is_group and group_id) else chat_id or sender_phone
+
+    async with AsyncSessionLocal() as db:
+        # Look up user
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if not user:
+            logger.warning("User %s not found", user_id)
+            return
+
+        # First: does this message resolve a pending permission decision?
+        # Only the owner can resolve.
+        is_owner_msg = sender_phone == settings.OWNER_WA_PHONE.lstrip("+") and not is_group
+        if is_owner_msg:
+            decision = await permission_service.try_resolve(db, message_text)
+            if decision is not None:
+                if decision.status == "approved":
+                    result_msg = await _execute_approved_decision(db, decision)
+                    await whatsapp_service.send_text(settings.OWNER_WA_PHONE, result_msg)
+                elif decision.status == "rejected":
+                    await whatsapp_service.send_text(
+                        settings.OWNER_WA_PHONE, f"OK, '{decision.action_type}' cancelled."
+                    )
+                elif decision.status == "expired":
+                    await whatsapp_service.send_text(
+                        settings.OWNER_WA_PHONE, "That request expired. Send the original message again to retry."
+                    )
+                return
+
+        # Otherwise: let the agent process it
         try:
-            logger.info("🚀 Starting Agent Worker...")
-            
-            # Connect to Redis
-            await redis_client.connect()
-
-            # Initialize Redis Stream consumer
-            self.consumer = RedisStreamConsumer(
-                redis_client=redis_client,
-                stream_name="message_queue",
-                group_name="agent_workers",
-                consumer_name=f"agent_worker_{settings.ENVIRONMENT}_{datetime.utcnow().timestamp()}"
+            reply = await agent_engine.process_message(
+                db=db,
+                user=user,
+                chat_id=chat_id,
+                message_text=message_text,
+                is_group=is_group,
+                group_id=group_id or None,
             )
-            
-            # Ensure consumer group exists
-            await self.consumer.ensure_group()
-            
-            # Setup signal handlers for graceful shutdown
-            signal.signal(signal.SIGINT, self._handle_shutdown)
-            signal.signal(signal.SIGTERM, self._handle_shutdown)
-            
-            self.running = True
-            logger.info("✅ Agent Worker started successfully")
-            
-            # Main processing loop
-            await self._process_loop()
-            
-        except Exception as e:
-            logger.error(f"Failed to start Agent Worker: {e}")
-            sys.exit(1)
-    
-    async def _process_loop(self):
-        """Main message processing loop"""
-        
-        while self.running:
-            try:
-                # Check for pending messages first (recovery from crashes)
-                pending_messages = await self.consumer.read_pending_messages(count=10)
-                
-                if pending_messages:
-                    logger.info(f"🔄 Processing {len(pending_messages)} pending message(s)")
-                    for message_id, message_data in pending_messages:
-                        await self._process_message(message_id, message_data)
-                
-                # Read new messages (blocks for 5 seconds)
-                messages = await self.consumer.read_messages()
-                
-                if messages:
-                    for message_id, message_data in messages:
-                        await self._process_message(message_id, message_data)
-                
-                # Cleanup: trim stream periodically
-                if datetime.utcnow().minute % 10 == 0:  # Every 10 minutes
-                    await self.consumer.trim_stream(max_len=10000)
-                
-            except Exception as e:
-                logger.error(f"Error in processing loop: {e}")
-                await asyncio.sleep(5)  # Back off on errors
-    
-    async def _process_message(self, message_id: str, message_data: Dict[str, Any]):
-        """
-        Process a single message
-        
-        Args:
-            message_id: Redis Stream message ID
-            message_data: Message payload
-        """
-        self._processing_count += 1
+        except Exception as exc:
+            logger.exception("Agent processing failed: %s", exc)
+            reply = "Something went wrong. I'll try again next time."
+
+        if not reply:
+            return
+
+        # Permission gate for group replies
+        if is_group and await permission_service.is_required("group_reply"):
+            await permission_service.request_permission(
+                db=db,
+                user=user,
+                action_type="group_reply",
+                proposed_action={
+                    "group_id": group_id,
+                    "reply_text": reply,
+                    "original_message": message_text[:200],
+                },
+                source_chat=chat_id,
+            )
+            logger.info("Group reply queued for owner approval")
+            return
+
+        await whatsapp_service.send_text(reply_to, reply)
+
+
+async def _main() -> None:
+    setup_logging()
+    signal.signal(signal.SIGTERM, _handle_stop)
+    signal.signal(signal.SIGINT, _handle_stop)
+
+    logger.info("Agent worker starting (consumer=%s)", CONSUMER_NAME)
+    await ensure_consumer_group()
+    r = await get_redis()
+
+    while not STOP:
         try:
-            user_id = message_data.get("user_id")
-            wa_phone = message_data.get("wa_phone")
-            message_text = message_data.get("message_text")
-            
-            logger.info(f"📨 Processing message {message_id} from {wa_phone}")
-            
-            # Get database session
-            async for db in get_async_session():
+            entries = await r.xreadgroup(
+                groupname=MESSAGE_STREAM_GROUP,
+                consumername=CONSUMER_NAME,
+                streams={MESSAGE_STREAM: ">"},
+                count=10,
+                block=5000,
+            )
+        except Exception as exc:
+            logger.error("XREADGROUP failed: %s", exc)
+            await asyncio.sleep(2)
+            continue
+
+        if not entries:
+            continue
+
+        for _stream, messages in entries:
+            for msg_id, fields in messages:
                 try:
-                    # Load user
-                    query = select(User).where(User.wa_phone == wa_phone)
-                    result = await db.execute(query)
-                    user = result.scalar_one_or_none()
-                    
-                    if not user:
-                        logger.info(f"New user detected: {wa_phone}, sending OAuth registration link")
-                        
-                        # Generate direct Google OAuth URL
-                        from app.services.oauth_service import oauth_service
-                        try:
-                            oauth_url, state = await oauth_service.generate_authorization_url(
-                                user_phone=wa_phone,
-                                db=db
-                            )
-                            
-                            welcome_message = (
-                                f"🔐 *Calendar Authorization Required*\n\n"
-                                f"To manage your Google Calendar, I need your permission to access it.\n\n"
-                                f"Please click the link below to authorize:\n"
-                                f"{oauth_url}\n\n"
-                                f"This is a one-time setup and your data is completely secure. "
-                                f"Once authorized, you can start managing your calendar through WhatsApp!"
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to generate OAuth URL: {e}")
-                            welcome_message = (
-                                f"👋 Welcome to WhatsApp Calendar Agent!\n\n"
-                                f"To get started, please visit:\n"
-                                f"{settings.BASE_URL}/oauth/start?phone={wa_phone}\n\n"
-                                f"and connect your Google Calendar."
-                            )
-                        
-                        await whatsapp_service.send_text_message(
-                            to=wa_phone,
-                            message=welcome_message
-                        )
-                        await self.consumer.ack_message(message_id)
-                        return
-                    
-                    # Check if user has pending decision
-                    pending_decision = await self.conflict_service.get_active_pending_decision(
-                        db=db,
-                        user_id=user.id
-                    )
-                    
-                    if pending_decision:
-                        # Route to decision resolver
-                        logger.info(f"🔀 Routing to decision resolver (pending_decision_id={pending_decision.id})")
-                        
-                        response_text = await decision_resolver.process_decision_response(
-                            db=db,
-                            user=user,
-                            message_text=message_text,
-                            pending_decision=pending_decision
-                        )
-                    else:
-                        # Route to normal agent
-                        logger.info(f"🤖 Routing to agent engine")
-                        
-                        response_text = await agent_engine.process_message(
-                            user=user,
-                            message=message_text,
-                            db=db
-                        )
-                    
-                    # Send response via WhatsApp
-                    success = await whatsapp_service.send_text_message(
-                        to=wa_phone,
-                        message=response_text
-                    )
-                    
-                    if success:
-                        logger.info(f"✅ Message {message_id} processed successfully")
-                        await self.consumer.ack_message(message_id)
-                    else:
-                        logger.error(f"Failed to send WhatsApp response for message {message_id}")
-                        # Don't ACK - will be retried
-                        await self.consumer.nack_message(message_id)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing message {message_id}: {e}", exc_info=True)
-                    # Don't ACK - message will be retried
-                    await self.consumer.nack_message(message_id)
-                    
-                    # Send error message to user
+                    await _process_one(msg_id, fields)
+                    await r.xack(MESSAGE_STREAM, MESSAGE_STREAM_GROUP, msg_id)
+                except Exception as exc:
+                    logger.exception("Failed to process %s: %s", msg_id, exc)
+                    # Send to dead-letter stream
                     try:
-                        await whatsapp_service.send_text_message(
-                            to=wa_phone,
-                            message="❌ An error occurred processing your request. Please try again."
-                        )
-                    except:
+                        await r.xadd(MESSAGE_STREAM_DEAD, {**fields, "error": str(exc)[:500]})
+                        await r.xack(MESSAGE_STREAM, MESSAGE_STREAM_GROUP, msg_id)
+                    except Exception:
                         pass
-                
-                finally:
-                    await db.close()
-        
-        except Exception as e:
-            logger.error(f"Critical error processing message {message_id}: {e}")
-            await self.consumer.nack_message(message_id)
-        finally:
-            self._processing_count -= 1
-    
-    def _handle_shutdown(self, signum, frame):
-        """Handle shutdown signals gracefully"""
-        logger.info(f"🛑 Received shutdown signal ({signum})")
-        self.running = False
-    
-    async def stop(self):
-        """Stop the worker gracefully, waiting for in-flight messages"""
-        logger.info("🛑 Stopping Agent Worker...")
-        self.running = False
-        
-        # Wait for in-flight messages to complete
-        if self._processing_count > 0:
-            logger.info(f"⏳ Waiting for {self._processing_count} in-flight message(s) to complete...")
-            start_time = datetime.utcnow()
-            while self._processing_count > 0:
-                if (datetime.utcnow() - start_time).total_seconds() > self._shutdown_timeout:
-                    logger.warning(f"⚠️ Shutdown timeout reached with {self._processing_count} messages still processing")
-                    break
-                await asyncio.sleep(0.5)
-        
-        # Close connections
-        try:
-            await redis_client.disconnect()
-        except Exception as e:
-            logger.error(f"Error closing Redis connection: {e}")
-        
-        try:
-            await whatsapp_service.close()
-        except Exception as e:
-            logger.error(f"Error closing WhatsApp client: {e}")
-        
-        logger.info("✅ Agent Worker stopped")
 
+    logger.info("Agent worker stopped")
 
-async def main():
-    """Main entry point for Agent Worker"""
-    print("🔄 Agent Worker script started", flush=True)
-    try:
-        worker = AgentWorker()
-        print("✅ Agent Worker initialized", flush=True)
-        await worker.start()
-    except KeyboardInterrupt:
-        logger.info("🛑 Interrupted by user")
-    except Exception as e:
-        print(f"❌ CRITICAL ERROR IN WORKER MAIN: {e}", flush=True)
-        logger.exception("Critical error in worker main")
-    finally:
-        if 'worker' in locals():
-            await worker.stop()
 
 if __name__ == "__main__":
-    print("🚀 Launching Agent Worker...", flush=True)
-    asyncio.run(main())
+    asyncio.run(_main())

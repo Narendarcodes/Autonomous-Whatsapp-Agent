@@ -66,6 +66,11 @@ tokens/
 *.crt
 credentials.json
 token.json
+google-service-account.json
+*-service-account.json
+
+# Backup of corrupted .git folder
+.git-broken/
 
 # Docker
 .dockerignore

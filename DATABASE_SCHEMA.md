@@ -15,7 +15,7 @@ Stores user information and Google OAuth credentials.
 ```sql
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    wa_phone VARCHAR(20) UNIQUE NOT NULL,  -- WhatsApp phone (e.g., "919999999999")
+    wa_phone VARCHAR(20) UNIQUE NOT NULL,  -- WhatsApp phone (e.g., "916300354385")
     google_refresh_token TEXT,              -- Encrypted OAuth refresh token
     google_access_token TEXT,               -- Short-lived OAuth access token
     last_auth_time TIMESTAMP,               -- Last OAuth authentication
@@ -195,7 +195,7 @@ Consumer: agent_worker_{environment}_{timestamp}
 Message Format:
 {
   "user_id": "UUID",
-  "wa_phone": "919999999999",
+  "wa_phone": "916300354385",
   "message_text": "Create meeting tomorrow at 3pm",
   "timestamp": "2025-11-26T12:00:00Z"
 }
@@ -224,8 +224,8 @@ Fields:
 ```
 
 **Commands:**
-- `HSET session:919999999999 last_message "Create event"`
-- `EXPIRE session:919999999999 3600`
+- `HSET session:916300354385 last_message "Create event"`
+- `EXPIRE session:916300354385 3600`
 
 ---
 
@@ -246,9 +246,9 @@ Format:
 ```
 
 **Commands:**
-- `LPUSH conversation:919999999999 '{"role":"user","content":"hi"}'`
-- `LTRIM conversation:919999999999 0 9`
-- `LRANGE conversation:919999999999 0 -1`
+- `LPUSH conversation:916300354385 '{"role":"user","content":"hi"}'`
+- `LTRIM conversation:916300354385 0 9`
+- `LRANGE conversation:916300354385 0 -1`
 
 ---
 
@@ -261,13 +261,13 @@ Type: String (JSON serialized)
 TTL: Variable (300-3600 seconds)
 
 Examples:
-- cache:oauth:919999999999
-- cache:events:919999999999:today
+- cache:oauth:916300354385
+- cache:events:916300354385:today
 ```
 
 **Commands:**
-- `SETEX cache:oauth:919999999999 3600 "access_token_value"`
-- `GET cache:oauth:919999999999`
+- `SETEX cache:oauth:916300354385 3600 "access_token_value"`
+- `GET cache:oauth:916300354385`
 
 ---
 
@@ -281,8 +281,8 @@ TTL: 60 seconds (window)
 Max: 10 requests per window
 
 Commands:
-- INCR rate_limit:919999999999
-- EXPIRE rate_limit:919999999999 60
+- INCR rate_limit:916300354385
+- EXPIRE rate_limit:916300354385 60
 ```
 
 ---
@@ -339,7 +339,7 @@ Message Format:
 {
   "timestamp": "2025-11-26T12:00:00Z",
   "level": "INFO",
-  "message": "📨 Processing message from 919999999999"
+  "message": "📨 Processing message from 916300354385"
 }
 ```
 
@@ -399,13 +399,13 @@ Host: postgres (Docker network) / localhost (host)
 Port: 5432
 Database: calendar_agent
 User: calendaruser
-Password: change_me_postgres_password (from .env)
+Password: calendarpass (from .env)
 ```
 
 ### Redis
 ```
 Host: redis (Docker network) / localhost (host)
 Port: 6379
-Password: change_me_redis_password (from .env)
+Password: redispass (from .env)
 Database: 0
 ```

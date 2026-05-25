@@ -8,12 +8,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-calendaruser}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_postgres_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calendarpass}
       POSTGRES_DB: ${POSTGRES_DB:-calendar_agent}
       POSTGRES_INITDB_ARGS: "-E UTF8"
-    # Port not exposed to host - only accessible within docker network
-    # ports:
-    #   - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../backend/migrations:/docker-entrypoint-initdb.d:ro
@@ -34,7 +31,7 @@ services:
     command: >
       redis-server
       --appendonly yes
-      --requirepass ${REDIS_PASSWORD:-change_me_redis_password}
+      --requirepass ${REDIS_PASSWORD:-redispass}
       --maxmemory 256mb
       --maxmemory-policy allkeys-lru
     ports:
@@ -50,6 +47,54 @@ services:
     networks:
       - calendar_network
 
+  # ==================== OPENWA (WhatsApp Protocol Adapter) ====================
+  openwa:
+    image: openwa/openwa:latest
+    container_name: whatsapp_openwa
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: "2785"
+      LOG_LEVEL: info
+      ENGINE_TYPE: whatsapp-web.js
+      SESSION_DATA_PATH: /app/data/sessions
+
+      # Reuses the same PostgreSQL instance
+      DATABASE_TYPE: postgres
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-calendar_agent}
+      DATABASE_USERNAME: ${POSTGRES_USER:-calendaruser}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-calendarpass}
+      DATABASE_SYNCHRONIZE: "true"
+
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/data/media
+
+      API_MASTER_KEY: ${OPENWA_API_KEY:-openwa_master_key_change_me}
+
+      ENABLE_SWAGGER: "true"
+      PUPPETEER_HEADLESS: "true"
+      PUPPETEER_ARGS: "--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu"
+    ports:
+      - "2785:2785"
+    volumes:
+      - openwa_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2785/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    shm_size: '512mb'
+    networks:
+      - calendar_network
+
   # ==================== FASTAPI BACKEND (Webhook API) ====================
   backend:
     build:
@@ -62,41 +107,33 @@ services:
     env_file:
       - ../backend/.env
     environment:
-      # Database connection (override for container network)
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      
-      # Redis connection (override for container network)
       REDIS_HOST: redis
       REDIS_PORT: 6379
-    
+      OPENWA_BASE_URL: http://openwa:2785
+
     ports:
       - "8000:8000"
-    
+
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    
+
     volumes:
-      # Mount source code for development (hot reload)
       - ../backend/app:/app/app:ro
-      # Token storage (persistent)
       - token_storage:/app/tokens
-      # Logs
       - logs:/app/logs
-      # Mount Docker socket for log viewing
       - //var/run/docker.sock:/var/run/docker.sock:ro
-    
+
     networks:
       - calendar_network
-    
-    # Allow container to reach host machine (for Ollama)
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    
-    # Health check
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -121,7 +158,8 @@ services:
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
-    
+      OPENWA_BASE_URL: http://openwa:2785
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,15 +167,15 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
-    
+
     volumes:
       - ../backend/app:/app/app:ro
       - token_storage:/app/tokens
       - logs:/app/logs
-    
+
     networks:
       - calendar_network
-    
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -158,7 +196,8 @@ services:
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
-    
+      OPENWA_BASE_URL: http://openwa:2785
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,15 +205,15 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
-    
+
     volumes:
       - ../backend/app:/app/app:ro
       - token_storage:/app/tokens
       - logs:/app/logs
-    
+
     networks:
       - calendar_network
-    
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -183,18 +222,22 @@ volumes:
   postgres_data:
     driver: local
     name: whatsapp_calendar_postgres_data
-  
+
   redis_data:
     driver: local
     name: whatsapp_calendar_redis_data
-  
+
   token_storage:
     driver: local
     name: whatsapp_calendar_tokens
-  
+
   logs:
     driver: local
     name: whatsapp_calendar_logs
+
+  openwa_data:
+    driver: local
+    name: whatsapp_openwa_data
 
 # ==================== NETWORKS ====================
 networks:

@@ -65,7 +65,7 @@ WITHOUT Redis: Calendar API call = 50ms (DB query) + 200ms (Google API) = 250ms
 **How it works:**
 ```
 Step 1: User clicks Google Calendar login link
-        → Redis stores: oauth_state:{random_token} = {phone: "919999999999"}
+        → Redis stores: oauth_state:{random_token} = {phone: "916300354385"}
         → TTL: 5 minutes
 
 Step 2: Google redirects back with same token

@@ -1,323 +1,153 @@
-"""
-Tools Registry
-Central registry for all LLM function calling tools
-"""
+"""Tool definitions exposed to the LLM via function calling."""
+from datetime import datetime
 
-from typing import List, Dict, Any, Callable, Optional
-import json
-from datetime import datetime, timedelta
+from dateutil import parser as date_parser
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.logging import logger
-from app.schemas.tools import Tool, ToolFunction, ToolProperties, ToolParameter
+from app.core.logging import get_logger
+from app.models.models import User
+from app.services.calendar_service import calendar_service
+
+logger = get_logger(__name__)
+
+# Tool schemas in OpenAI function-calling format (works for GitHub Models too).
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_upcoming_events",
+            "description": "List the user's upcoming Google Calendar events.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days_ahead": {"type": "integer", "description": "Look this many days ahead. Default 7.", "default": 7},
+                    "max_results": {"type": "integer", "description": "Maximum number of events to return.", "default": 10},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_event",
+            "description": (
+                "Create a new Google Calendar event. Use create_meet_link=true when the user "
+                "mentions a video call, video meeting, virtual meeting, or Google Meet."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {"type": "string", "description": "Title of the event."},
+                    "start_time": {"type": "string", "description": "ISO 8601 start time (e.g. 2026-05-27T19:00:00+05:30)."},
+                    "end_time": {"type": "string", "description": "ISO 8601 end time."},
+                    "description": {"type": "string", "default": ""},
+                    "location": {"type": "string", "default": ""},
+                    "attendees": {"type": "array", "items": {"type": "string"}, "default": []},
+                    "create_meet_link": {"type": "boolean", "default": False},
+                },
+                "required": ["summary", "start_time", "end_time"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_event",
+            "description": "Delete a Google Calendar event by its google_event_id.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "google_event_id": {"type": "string"},
+                },
+                "required": ["google_event_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_conflicts",
+            "description": "Check if a proposed time range conflicts with existing events.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_time": {"type": "string"},
+                    "end_time": {"type": "string"},
+                },
+                "required": ["start_time", "end_time"],
+            },
+        },
+    },
+]
 
 
-class ToolsRegistry:
-    """Registry for managing LLM tools"""
-    
-    def __init__(self):
-        self.tools: Dict[str, Callable] = {}
-        self.tool_schemas: List[Tool] = []
-        self._register_all_tools()
-    
-    def _register_all_tools(self):
-        """Register all available tools"""
-        # Register calendar tools
-        self.register_tool("get_upcoming_events", self._get_upcoming_events_schema())
-        self.register_tool("create_calendar_event", self._create_event_schema())
-        self.register_tool("update_calendar_event", self._update_event_schema())
-        self.register_tool("delete_calendar_event", self._delete_event_schema())
-        self.register_tool("search_calendar_events", self._search_events_schema())
-        
-        logger.info(f"📋 Registered {len(self.tools)} tools")
-    
-    def register_tool(self, name: str, schema: Tool):
-        """
-        Register a tool with its schema
-        
-        Args:
-            name: Tool name
-            schema: Tool schema definition
-        """
-        self.tools[name] = name  # Store reference
-        self.tool_schemas.append(schema)
-        logger.debug(f"Registered tool: {name}")
-    
-    def get_all_tools(self) -> List[Tool]:
-        """Get all registered tool schemas"""
-        return self.tool_schemas
-    
-    def get_tool_schema(self, name: str) -> Optional[Tool]:
-        """
-        Get schema for specific tool
-        
-        Args:
-            name: Tool name
-            
-        Returns:
-            Tool schema or None
-        """
-        for tool in self.tool_schemas:
-            if tool.function.name == name:
-                return tool
-        return None
-    
-    # ==================== TOOL SCHEMAS ====================
-    
-    def _get_upcoming_events_schema(self) -> Tool:
-        """Schema for getting upcoming events"""
-        return Tool(
-            type="function",
-            function=ToolFunction(
-                name="get_upcoming_events",
-                description="Get upcoming calendar events. Use this when user asks about their schedule, meetings, or events.",
-                parameters=ToolProperties(
-                    type="object",
-                    properties={
-                        "time_range": ToolParameter(
-                            type="string",
-                            description="Time range for events. Options: 'today', 'tomorrow', 'this_week', 'next_week', 'this_month'",
-                            enum=["today", "tomorrow", "this_week", "next_week", "this_month"]
-                        ),
-                        "start_date": ToolParameter(
-                            type="string",
-                            description="Custom start date in ISO format (YYYY-MM-DD). Use this for specific date queries."
-                        ),
-                        "end_date": ToolParameter(
-                            type="string",
-                            description="Custom end date in ISO format (YYYY-MM-DD). Use with start_date for date ranges."
-                        ),
-                        "max_results": ToolParameter(
-                            type="integer",
-                            description="Maximum number of events to return (default: 10)"
-                        )
-                    },
-                    required=[]
-                )
+def _parse_dt(value: str) -> datetime:
+    return date_parser.parse(value)
+
+
+async def execute_tool(
+    name: str,
+    arguments: dict,
+    db: AsyncSession,
+    user: User,
+    source_chat: str | None = None,
+) -> dict:
+    try:
+        if name == "list_upcoming_events":
+            events = await calendar_service.list_upcoming_events(
+                db,
+                user,
+                max_results=int(arguments.get("max_results", 10)),
+                days_ahead=int(arguments.get("days_ahead", 7)),
             )
-        )
-    
-    def _create_event_schema(self) -> Tool:
-        """Schema for creating events"""
-        return Tool(
-            type="function",
-            function=ToolFunction(
-                name="create_calendar_event",
-                description="Create a new calendar event. Use when user wants to schedule, create, or add an event. For RECURRING events (daily, weekly, monthly reminders), include the recurrence parameter.",
-                parameters=ToolProperties(
-                    type="object",
-                    properties={
-                        "summary": ToolParameter(
-                            type="string",
-                            description="Event title or summary (required)"
-                        ),
-                        "start_time": ToolParameter(
-                            type="string",
-                            description="Event start time in ISO format (YYYY-MM-DDTHH:MM:SS) (required)"
-                        ),
-                        "end_time": ToolParameter(
-                            type="string",
-                            description="Event end time in ISO format (YYYY-MM-DDTHH:MM:SS) (required)"
-                        ),
-                        "description": ToolParameter(
-                            type="string",
-                            description="Event description or notes (optional)"
-                        ),
-                        "location": ToolParameter(
-                            type="string",
-                            description="Event location (optional)"
-                        ),
-                        "attendees": ToolParameter(
-                            type="array",
-                            description="List of attendee email addresses (optional)"
-                        ),
-                        "recurrence": ToolParameter(
-                            type="object",
-                            description="For recurring/repeating events. Set frequency to DAILY, WEEKLY, MONTHLY, or YEARLY. Example: {\"frequency\": \"DAILY\"} for daily reminders. Can also include: interval (repeat every N periods), count (number of occurrences), until (end date ISO format), by_day (for weekly: [\"MO\",\"TU\",\"WE\",\"TH\",\"FR\"])"
-                        )
-                    },
-                    required=["summary", "start_time", "end_time"]
-                )
-            )
-        )
-    
-    def _update_event_schema(self) -> Tool:
-        """Schema for updating events"""
-        return Tool(
-            type="function",
-            function=ToolFunction(
-                name="update_calendar_event",
-                description="Update an existing calendar event. Use when user wants to modify, change, or reschedule an event.",
-                parameters=ToolProperties(
-                    type="object",
-                    properties={
-                        "event_id": ToolParameter(
-                            type="string",
-                            description="Google Calendar event ID (required). Get this from search results or event list."
-                        ),
-                        "summary": ToolParameter(
-                            type="string",
-                            description="New event title (optional)"
-                        ),
-                        "start_time": ToolParameter(
-                            type="string",
-                            description="New start time in ISO format (optional)"
-                        ),
-                        "end_time": ToolParameter(
-                            type="string",
-                            description="New end time in ISO format (optional)"
-                        ),
-                        "description": ToolParameter(
-                            type="string",
-                            description="New description (optional)"
-                        ),
-                        "location": ToolParameter(
-                            type="string",
-                            description="New location (optional)"
-                        ),
-                        "status": ToolParameter(
-                            type="string",
-                            description="Event status: 'confirmed', 'tentative', or 'cancelled' (optional)",
-                            enum=["confirmed", "tentative", "cancelled"]
-                        )
-                    },
-                    required=["event_id"]
-                )
-            )
-        )
-    
-    def _delete_event_schema(self) -> Tool:
-        """Schema for deleting events"""
-        return Tool(
-            type="function",
-            function=ToolFunction(
-                name="delete_calendar_event",
-                description="Delete a calendar event. Use when user wants to cancel or remove an event.",
-                parameters=ToolProperties(
-                    type="object",
-                    properties={
-                        "event_id": ToolParameter(
-                            type="string",
-                            description="Google Calendar event ID to delete (required)"
-                        )
-                    },
-                    required=["event_id"]
-                )
-            )
-        )
-    
-    def _search_events_schema(self) -> Tool:
-        """Schema for searching events"""
-        return Tool(
-            type="function",
-            function=ToolFunction(
-                name="search_calendar_events",
-                description="Search for calendar events by keyword. Use when user asks to find specific events.",
-                parameters=ToolProperties(
-                    type="object",
-                    properties={
-                        "query": ToolParameter(
-                            type="string",
-                            description="Search query text (required)"
-                        ),
-                        "max_results": ToolParameter(
-                            type="integer",
-                            description="Maximum number of results (default: 10)"
-                        )
-                    },
-                    required=["query"]
-                )
-            )
-        )
-    
-    # ==================== HELPER FUNCTIONS ====================
-    
-    @staticmethod
-    def parse_time_range(time_range: str) -> tuple:
-        """
-        Parse time range string to start and end dates
-        
-        Args:
-            time_range: Time range identifier
-            
-        Returns:
-            Tuple of (start_date, end_date)
-        """
-        now = datetime.utcnow()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        if time_range == "today":
-            start = today_start
-            end = today_start + timedelta(days=1)
-        
-        elif time_range == "tomorrow":
-            start = today_start + timedelta(days=1)
-            end = today_start + timedelta(days=2)
-        
-        elif time_range == "this_week":
-            # Start of week (Monday)
-            days_since_monday = now.weekday()
-            start = today_start - timedelta(days=days_since_monday)
-            end = start + timedelta(days=7)
-        
-        elif time_range == "next_week":
-            days_since_monday = now.weekday()
-            start = today_start - timedelta(days=days_since_monday) + timedelta(days=7)
-            end = start + timedelta(days=7)
-        
-        elif time_range == "this_month":
-            start = today_start.replace(day=1)
-            # Next month
-            if start.month == 12:
-                end = start.replace(year=start.year + 1, month=1)
-            else:
-                end = start.replace(month=start.month + 1)
-        
-        else:
-            # Default: next 7 days
-            start = now
-            end = now + timedelta(days=7)
-        
-        return start, end
-    
-    @staticmethod
-    def format_event_for_display(event: Dict[str, Any]) -> str:
-        """
-        Format event for natural language display
-        
-        Args:
-            event: Event dictionary
-            
-        Returns:
-            Formatted event string
-        """
-        summary = event.get('summary', 'Untitled Event')
-        
-        # Parse start time
-        start = event.get('start', {})
-        if 'dateTime' in start:
-            start_dt = datetime.fromisoformat(start['dateTime'].replace('Z', '+00:00'))
-            time_str = start_dt.strftime('%I:%M %p on %B %d, %Y')
-        elif 'date' in start:
-            start_dt = datetime.fromisoformat(start['date'])
-            time_str = start_dt.strftime('%B %d, %Y') + " (All day)"
-        else:
-            time_str = "Unknown time"
-        
-        location = event.get('location', '')
-        description = event.get('description', '')
-        
-        result = f"📅 {summary}\n⏰ {time_str}"
-        
-        if location:
-            result += f"\n📍 {location}"
-        
-        if description:
-            # Truncate long descriptions
-            desc_preview = description[:100] + "..." if len(description) > 100 else description
-            result += f"\n📝 {desc_preview}"
-        
-        return result
+            simplified = [
+                {
+                    "id": e.get("id"),
+                    "summary": e.get("summary"),
+                    "start": (e.get("start") or {}).get("dateTime") or (e.get("start") or {}).get("date"),
+                    "end": (e.get("end") or {}).get("dateTime") or (e.get("end") or {}).get("date"),
+                    "location": e.get("location"),
+                    "meet_link": (e.get("conferenceData") or {}).get("entryPoints", [{}])[0].get("uri")
+                    if e.get("conferenceData") else None,
+                }
+                for e in events
+            ]
+            return {"events": simplified, "count": len(simplified)}
 
+        if name == "create_event":
+            start = _parse_dt(arguments["start_time"])
+            end = _parse_dt(arguments["end_time"])
+            result = await calendar_service.create_event(
+                db,
+                user,
+                summary=arguments["summary"],
+                start_time=start,
+                end_time=end,
+                description=arguments.get("description", ""),
+                location=arguments.get("location", ""),
+                attendees=arguments.get("attendees") or [],
+                create_meet_link=bool(arguments.get("create_meet_link", False)),
+                source_chat=source_chat,
+            )
+            return result or {"error": "Failed to create event"}
 
-# Global instance
-tools_registry = ToolsRegistry()
+        if name == "delete_event":
+            ok = await calendar_service.delete_event(db, user, arguments["google_event_id"])
+            return {"deleted": ok}
+
+        if name == "check_conflicts":
+            start = _parse_dt(arguments["start_time"])
+            end = _parse_dt(arguments["end_time"])
+            conflicts = await calendar_service.find_conflicts(db, user, start, end)
+            return {
+                "has_conflicts": len(conflicts) > 0,
+                "conflicts": [
+                    {"id": c.id, "summary": c.summary, "start": c.start_time.isoformat()}
+                    for c in conflicts
+                ],
+            }
+
+        return {"error": f"Unknown tool: {name}"}
+    except Exception as exc:
+        logger.exception("Tool %s failed: %s", name, exc)
+        return {"error": str(exc)}

@@ -56,7 +56,7 @@ Option 3: Automated Token Refresh
 
 ### 2. **Single User Limitation** 👤
 **Current Issue:**
-- System designed for single WhatsApp number (+919999999999)
+- System designed for single WhatsApp number (+916300354385)
 - Hard to scale to multiple users
 - No user management interface
 
@@ -603,7 +603,7 @@ CONVERSATION_TTL: int = 86400  # Was: 3600 (24h instead of 1h)
 ### 3. **Add Admin Whitelist** (10 minutes)
 ```python
 # backend/app/core/config.py
-ALLOWED_PHONE_NUMBERS: list = ["919999999999"]
+ALLOWED_PHONE_NUMBERS: list = ["916300354385"]
 
 # backend/app/api/webhooks.py
 if sender_phone not in settings.ALLOWED_PHONE_NUMBERS:
