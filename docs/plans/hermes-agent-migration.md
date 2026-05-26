@@ -1,6 +1,7 @@
 # Plan: Pivot the AI brain to Hermes Agent
 
-Status: DRAFT — for owner review. No code changes yet.
+Status: APPROVED — owner has answered all 8 open questions
+(see §10 Decisions below). Ready to implement in phases.
 
 ---
 
@@ -61,17 +62,40 @@ WhatsApp ─── Hermes Agent ─── Google APIs
   if Hermes' direction diverges from ours. We lose the carefully
   designed permission flow + group routing we just built.
 
-### Option B — OpenWA stays as transport; Hermes acts as the brain (Recommended)
+### Option B — OpenWA stays as transport; Hermes acts as the brain (CHOSEN)
 
 ```
-WhatsApp ─── OpenWA ─── FastAPI (router + permission)
-                              │
-                              └─► Hermes Agent (HTTP/OpenAI-compatible)
-                                       │
-                                       ├─► Tool: Google Calendar
-                                       ├─► Tool: Google Drive (future)
-                                       └─► Skill Documents (memory)
+WhatsApp
+    │
+    ▼
+OpenWA  (whatsapp-web.js, port 2785)
+    │   webhook
+    ▼
+FastAPI (router + permission + security ACL)
+    │   POST /v1/chat/completions  (OpenAI SDK)
+    ▼
+Hermes Agent  (port 8642)        ←─MCP─→  Our MCP server
+    │   model API call                      (calendar, drive, ...)
+    ▼
+LiteLLM proxy  (port 4000)
+    │   provider-specific call w/ fallback chain
+    ▼
+[GitHub Models] → [Google AI Studio] → [Groq] → [OpenRouter] → [Nvidia NIM]
 ```
+
+**Verified facts about Hermes HTTP API** (from
+`github.com/NousResearch/hermes-agent`, MIT):
+- OpenAI-compatible chat completions at `:8642/v1/`
+- Enable with `API_SERVER_ENABLED=true`; auth via `API_SERVER_KEY`
+- OpenAI Python SDK works unmodified
+- Persistent memory + skills work over the API, not just messaging
+- Tools that Hermes runs itself (terminal, web, MCP) are
+  server-side; our calendar/drive tools must be exposed as an
+  MCP server that Hermes connects to (configurable in
+  `config.yaml`)
+- **Cannot run Hermes' built-in WhatsApp Baileys gateway alongside
+  OpenWA** on the same WhatsApp number — single Web-linked session
+  limit. Hermes WhatsApp gateway must stay disabled.
 
 - Keeps OpenWA, keeps our FastAPI router, keeps our permission
   flow (the `pending_decisions` table + owner DM short-codes).
@@ -114,14 +138,35 @@ model + their skill ecosystem.
 |---|---|
 | WhatsApp transport (DMs, groups, media) | OpenWA |
 | Webhook reception, HMAC verification, idempotency | FastAPI |
-| Sender allow-list / rate limit / quiet hours | FastAPI (NEW: security_service.py) |
-| Owner permission gate (DM confirmation) | FastAPI (permission_service.py — already built) |
-| Group/DM routing of replies | FastAPI (agent_worker.py — already built) |
-| **LLM reasoning + memory + tool decision** | **Hermes** (replaces our `agent_engine.py`) |
-| Google Calendar/Drive/Maps tool execution | FastAPI (tool registry) |
-| Proactive reminders + briefings | FastAPI (scheduler_worker.py — already built) |
-| User preferences storage | FastAPI (NEW: preferences table) |
-| Audit log of every action | FastAPI (audit_log table — already built) |
+| Sender allow-list / rate limit / quiet hours | FastAPI (NEW: `security_service.py`) |
+| Owner permission gate (DM confirmation) | FastAPI (`permission_service.py` — already built) |
+| Group/DM routing of replies | FastAPI (`agent_worker.py` — already built) |
+| **LLM reasoning + memory + skills** | **Hermes** (replaces our `agent_engine.py`) |
+| **Tool exposure to Hermes** | **NEW: MCP server** (our calendar/drive/maps tools as an MCP endpoint) |
+| **Model routing + fallback chain** | **NEW: LiteLLM proxy** (one OpenAI-compatible endpoint that fans out to providers with fallback) |
+| Google Calendar/Drive/Maps tool execution | FastAPI (called by the MCP server) |
+| Proactive reminders + briefings | FastAPI (`scheduler_worker.py` — already built) |
+| User preferences storage | FastAPI (NEW: `user_preferences` table) |
+| Audit log of every action | FastAPI (`audit_log` table — already built) |
+
+### LiteLLM fallback chain
+
+LiteLLM is configured with a single virtual model (e.g. `hermes-llm`)
+that maps to a fallback list of providers. Hermes calls
+`http://litellm:4000/v1/chat/completions` with `model: hermes-llm`;
+LiteLLM tries each provider in order until one returns a valid
+response, retrying on rate-limit / quota / 5xx errors.
+
+Order:
+1. **GitHub Models** (free, GPT-4o-mini, ~20 req/min)
+2. **Google AI Studio** Gemini 2.0 Flash (free, 1M tokens/day)
+3. **Groq** (free tier, very fast; Llama 3.1, Mistral)
+4. **OpenRouter** (paid, model choice flexibility)
+5. **Nvidia NIM** (free tier, various open models)
+
+LiteLLM also handles per-key budgets, request logging, prompt
+caching, and circuit-breaking. It's the same proxy we can reuse for
+every future project — no need to re-implement fallback logic later.
 
 ---
 
@@ -181,7 +226,29 @@ this order and uses the first match:
 6. **Time-window override** (e.g. "auto during 9–6, confirm otherwise")
 7. **Default level** from §4.2
 
-### 4.4 Permission UI in chat
+### 4.4 Evolution: strict initially, learns over time
+
+The defaults from §4.2 are the starting point. The agent observes
+patterns and proposes upgrades through the same permission flow:
+
+- **Trigger**: same `(action_class, sender)` pair confirmed by the
+  owner N=5 times consecutively (configurable).
+- **Proposal**: agent DMs the owner:
+  `"You've approved 5 calendar events from +91-xxx in a row.
+   Want me to auto-approve calendar events from this sender?
+   Reply A1B2 yes or no."`
+- **Resolution**: a `yes` writes a row to `user_preferences`
+  (`source='inferred'`); future events from that sender skip
+  confirmation. A `no` writes a `decline_promotion` row so the
+  agent stops proposing this pair for 30 days.
+- **Audit**: every promotion is logged with the count of priors,
+  so the owner can later see why a preference exists and undo it
+  with `/revoke <preference_id>`.
+
+This means the system gets quieter the more you use it, without
+ever giving the agent permission you didn't grant.
+
+### 4.5 Permission UI in chat
 
 The owner shouldn't need to open a dashboard to change these. All
 preferences settable via WhatsApp DM commands to the agent:
@@ -445,24 +512,39 @@ permission-class entry.
 - Get the current build working before swapping the brain.
 - Validates OpenWA, FastAPI, Redis, Postgres, Calendar, permission flow.
 
-### Step 2 — Stand up Hermes
-- Install Hermes on the same host or a separate VPS.
-- Pick model backend (OpenRouter, Google AI Studio Gemini Flash,
-  or local Ollama).
-- Verify Hermes' API contract — does it expose an OpenAI-compatible
-  chat completions endpoint? A custom REST API? Need to read the
-  docs.
+### Step 2 — Stand up Hermes + LiteLLM + MCP server
+- Add Hermes service to docker-compose (image
+  `nousresearch/hermes-agent`, port 8642, `API_SERVER_ENABLED=true`,
+  `API_SERVER_KEY` set, persistent volume at `/opt/data`).
+- Add LiteLLM proxy service (image
+  `ghcr.io/berriai/litellm:main-stable`, port 4000) with the
+  cascading fallback config from §3.
+- Point Hermes' `config.yaml` model URL at
+  `http://litellm:4000/v1/`.
+- Build a small MCP server (FastMCP or the official MCP Python SDK)
+  that wraps our existing `tools/registry.py` — exposes
+  `list_upcoming_events`, `create_event`, `delete_event`,
+  `check_conflicts` as MCP tools. Run as new docker-compose service.
+- Register the MCP server in Hermes' `config.yaml` so it
+  auto-discovers the tools.
+- Verify Hermes' WhatsApp gateway is DISABLED in config.
 
 ### Step 3 — Replace agent_engine.py with a Hermes client
 - Single-file change. Same public method:
   `process_message(db, user, chat_id, message_text, is_group, group_id) → str`
-- Internally: forward to Hermes' API, pass our tool definitions,
-  execute tool calls on our side, return Hermes' final text.
+- Internally: instantiate `OpenAI(base_url="http://hermes:8642/v1",
+  api_key=settings.HERMES_API_KEY)` and call `chat.completions.create`.
+- No `tools=` in the call — Hermes resolves tool needs via its
+  MCP registration. Pass `session_id` header for memory continuity
+  per chat.
 
-### Step 4 — Register tools with Hermes
-- Same JSON schemas we already wrote in `tools/registry.py`.
-- Hermes call → Hermes returns "I want to call tool X with args Y"
-  → our code executes → return result → Hermes continues.
+### Step 4 — Register tools with Hermes via MCP
+- The MCP server stands up at Step 2 already. This step is just
+  verifying Hermes is discovering and calling them.
+- Test: from a curl against Hermes' API, send "list my next 3
+  events" → confirm Hermes calls the MCP `list_upcoming_events`
+  tool → MCP server invokes our existing calendar code → result
+  flows back through Hermes → curl response.
 
 ### Step 5 — Add `chat_acl`, `sender_acl`, `user_preferences` tables
 - New migration `005_security_and_preferences.sql`.
@@ -511,32 +593,39 @@ For Step 3 (Hermes swap):
 
 ---
 
-## 10. Open questions before implementation
+## 10. Decisions
 
-These need owner answers (or Hermes-docs verification) before code:
+All eight original open questions have been resolved.
 
-1. **Does Hermes Agent expose a stable HTTP API for external
-   orchestration**, or is it only a closed runtime that owns its
-   own message loop? (Critical for Option B.)
-2. **Hermes hosting** — self-host on the same Docker host as
-   OpenWA, or run on a separate VPS? RAM cost.
-3. **Hermes model backend** — Gemini Flash (free 1M tokens/day),
-   OpenRouter, or local Ollama? Each has different cost/quality
-   tradeoffs.
-4. **Default permission posture** — strict (everything starts as
-   `silent_log`, owner opts in chat-by-chat) or loose (everything
-   `confirm`, owner downgrades to `auto` selectively)? Strongly
-   recommend strict.
-5. **First chats to allow** — owner DM only? Plus VIPs? Plus the
-   one work group?
-6. **Memory boundary** — do we let Hermes remember the contents
-   of group chats, or only the owner's DMs? (Privacy concern for
-   the other group members.)
-7. **Voice transcription quota** — opt-in per chat, or globally
-   off until owner says otherwise? (Cost + privacy.)
-8. **If WhatsApp ban happens** — is the agent worth that risk?
-   OpenWA + whatsapp-web.js is not officially supported. Owner
-   should be aware before committing more time.
+| # | Question | Decision |
+|---|---|---|
+| 1 | Does Hermes expose a stable HTTP API for external orchestration? | **YES** — verified. OpenAI-compatible at `:8642/v1/`. Memory + skills work over the API. **Our tools must be exposed via MCP** (not as request-payload `tools`). Hermes' WhatsApp gateway is incompatible with OpenWA on the same number → keep OpenWA, disable Hermes WhatsApp gateway. |
+| 2 | Hermes hosting | **Same Docker host** as OpenWA + Postgres + Redis. Add Hermes + LiteLLM + MCP server as new services in the existing compose. |
+| 3 | LLM backend | **LiteLLM proxy with cascading fallback.** Order: GitHub Models → Google AI Studio (Gemini 2.0 Flash) → Groq → OpenRouter → Nvidia NIM. The proxy doubles as a reusable tool for future projects. |
+| 4 | Default permission posture | **Strict, evolving.** New chats start at `silent_log`. Action-class defaults use the table in §4.2. The agent proposes preference upgrades after N (default 5) successful manual confirmations of the same action+sender pair — owner approves the upgrade through the same permission flow. |
+| 5 | First chats to allow | **Owner's own DM only.** Single row in `chat_acl` with `mode='allow_all'`. Everything else stays `silent_log` until the owner explicitly adds it via `/allow <chat>`. |
+| 6 | Memory boundary | **DMs by default + opt-in groups + opt-in personal chats.** Per-chat memory toggle (`memory_enabled` column on `chat_acl`). Owner enables with `/memory-on <chat>`. Adds a row to `user_preferences` audited. |
+| 7 | Voice transcription | **Off by default**, opt-in per chat (`/voice-on <chat>`). Save cost + privacy. Uses Whisper API (via LiteLLM if it supports audio, otherwise direct OpenAI Whisper or Groq Whisper). |
+| 8 | WhatsApp ban risk | **Dedicated bot number.** Owner buys a second SIM / new WhatsApp number for the agent. Primary number is untouched. Onboarding flow will require the owner to confirm the number being linked is the dedicated bot number, not their primary. |
+
+### Cross-cutting implications
+
+- **New tables** in next migration:
+  `chat_acl` (chat_id, mode, memory_enabled, voice_enabled, notes),
+  `sender_acl` (sender_phone, trust_level, notes),
+  `user_preferences` (user_id, key, value, source, updated_at),
+  `preference_proposals` (track which prefs the agent has suggested,
+  to avoid spamming the owner).
+- **New services in docker-compose**:
+  - `hermes` (image: `nousresearch/hermes-agent`, port 8642)
+  - `litellm` (image: `ghcr.io/berriai/litellm:main-stable`, port 4000)
+  - `mcp-server` (built from our backend, exposes calendar/drive tools via MCP)
+- **agent_engine.py replacement**: thin wrapper around the OpenAI
+  SDK pointed at `http://hermes:8642/v1/`. Same public interface
+  (`process_message(...) -> str`). Keep the file for swappability.
+- **Onboarding wizard**: first DM from owner triggers the question
+  about whether this is the dedicated bot number; only proceeds if
+  owner confirms.
 
 ---
 
