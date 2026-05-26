@@ -11,7 +11,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP  # high-level FastMCP library (not mcp.server.fastmcp)
 
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
@@ -183,6 +183,8 @@ async def get_current_time() -> str:
 
 
 if __name__ == "__main__":
-    import asyncio
+    import uvicorn
     logger.info("MCP server starting on port 9000")
-    mcp.run(transport="sse", host="0.0.0.0", port=9000)
+    # FastMCP 3.x: http_app returns a Starlette app for HTTP/SSE transport
+    asgi_app = mcp.http_app(transport="sse")
+    uvicorn.run(asgi_app, host="0.0.0.0", port=9000, log_level="info")

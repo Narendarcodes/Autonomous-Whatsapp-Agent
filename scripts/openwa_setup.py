@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""One-time OpenWA session bootstrap.
+"""First-run WhatsApp setup for Evolution API.
 
-Creates the session, starts it, opens the QR code in your browser, polls
-until WhatsApp confirms the link, then registers the webhook with our
-FastAPI backend.
+1. Creates the WhatsApp instance via Evolution API
+2. Polls until QR code is ready
+3. Opens QR in browser — scan with your DEDICATED BOT NUMBER
+4. Polls until connected
+5. Registers webhook back to our FastAPI
 
-Run after `docker-compose up -d openwa` (and FastAPI optional).
+Run after:  docker-compose up -d postgres redis litellm hermes openwa backend
 """
 import os
 import sys
@@ -14,99 +16,140 @@ import webbrowser
 
 import httpx
 
-OPENWA_BASE = os.environ.get("OPENWA_BASE_URL", "http://localhost:2785")
-OPENWA_KEY = os.environ.get("OPENWA_API_KEY", "openwa_master_key_change_me")
-SESSION_ID = os.environ.get("OPENWA_SESSION_ID", "my-session")
+EVOLUTION_BASE = os.environ.get("OPENWA_BASE_URL", "http://localhost:8080").replace(
+    "openwa:8080", "localhost:2785"
+)
+API_KEY = os.environ.get("OPENWA_API_KEY", "openwa_master_key_change_me")
+INSTANCE = os.environ.get("OPENWA_SESSION_ID", "my-session")
 WEBHOOK_URL = os.environ.get("OPENWA_WEBHOOK_URL", "http://backend:8000/webhook/openwa")
-WEBHOOK_SECRET = os.environ.get("OPENWA_WEBHOOK_SECRET", "")
+BACKEND_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
-HEADERS = {"X-Api-Key": OPENWA_KEY, "Content-Type": "application/json"}
-
-
-def _request(method: str, path: str, **kwargs) -> httpx.Response:
-    url = f"{OPENWA_BASE.rstrip('/')}{path}"
-    with httpx.Client(timeout=30.0, headers=HEADERS) as client:
-        return client.request(method, url, **kwargs)
+HDR = {"apikey": API_KEY, "Content-Type": "application/json"}
 
 
-def wait_for_openwa() -> None:
-    print("Waiting for OpenWA to be reachable...")
+def _get(path: str) -> httpx.Response:
+    return httpx.get(f"{EVOLUTION_BASE.rstrip('/')}{path}", headers=HDR, timeout=10)
+
+
+def _post(path: str, body: dict) -> httpx.Response:
+    return httpx.post(f"{EVOLUTION_BASE.rstrip('/')}{path}", headers=HDR, json=body, timeout=10)
+
+
+def wait_for_evolution() -> None:
+    print("Waiting for Evolution API…")
     for _ in range(60):
         try:
-            r = httpx.get(f"{OPENWA_BASE}/health", timeout=3.0)
+            r = httpx.get(f"{EVOLUTION_BASE.rstrip('/')}/", timeout=3, headers=HDR)
             if r.status_code == 200:
-                print("  OpenWA is up.")
+                print(f"  Evolution API v{r.json().get('version', '?')} is up.")
                 return
         except Exception:
             pass
         time.sleep(2)
-    sys.exit("OpenWA never became reachable. Is it running?")
+    sys.exit("Evolution API never became reachable — is the container running?")
 
 
-def create_session() -> None:
-    r = _request("POST", "/api/sessions", json={"name": SESSION_ID})
-    if r.status_code in (200, 201):
-        print(f"  Created session '{SESSION_ID}'.")
-    elif r.status_code == 409:
-        print(f"  Session '{SESSION_ID}' already exists.")
-    else:
-        print(f"  Session create returned {r.status_code}: {r.text[:200]}")
-
-
-def start_session() -> None:
-    r = _request("POST", f"/sessions/{SESSION_ID}/start")
-    if r.status_code in (200, 201, 204):
-        print("  Session started.")
-    else:
-        print(f"  Session start returned {r.status_code}: {r.text[:200]}")
-
-
-def poll_status() -> None:
-    print("Polling session status (this may take ~30s)...")
-    qr_opened = False
-    for _ in range(120):
-        r = _request("GET", f"/sessions/{SESSION_ID}")
-        if r.status_code != 200:
-            time.sleep(2)
-            continue
-        status = (r.json() or {}).get("status", "")
-        print(f"  status={status}")
-        if status == "QR_READY" and not qr_opened:
-            qr_url = f"{OPENWA_BASE}/sessions/{SESSION_ID}/qr"
-            print(f"\n  Scan this QR with your phone's WhatsApp:\n    {qr_url}\n")
-            try:
-                webbrowser.open(qr_url)
-            except Exception:
-                pass
-            qr_opened = True
-        if status in ("READY", "AUTHENTICATED"):
-            print("  Session linked to your WhatsApp account.")
-            return
-        time.sleep(3)
-    sys.exit("Session did not become READY in time. Rerun this script.")
-
-
-def register_webhook() -> None:
+def create_instance() -> None:
     payload = {
-        "url": WEBHOOK_URL,
-        "events": ["message.received", "session.status"],
-        "secret": WEBHOOK_SECRET,
+        "instanceName": INSTANCE,
+        "integration": "WHATSAPP-BAILEYS",
+        "qrcode": True,
+        "webhook": {
+            "url": WEBHOOK_URL,
+            "byEvents": True,
+            "base64": False,
+            "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+        },
     }
-    r = _request("POST", f"/sessions/{SESSION_ID}/webhooks", json=payload)
+    r = _post("/instance/create", payload)
     if r.status_code in (200, 201):
-        print(f"  Webhook registered → {WEBHOOK_URL}")
+        print(f"  Instance '{INSTANCE}' created.")
+    elif r.status_code == 403 or "already" in r.text.lower():
+        print(f"  Instance '{INSTANCE}' already exists.")
     else:
-        print(f"  Webhook register returned {r.status_code}: {r.text[:200]}")
+        print(f"  Create returned {r.status_code}: {r.text[:200]}")
+
+
+def poll_for_qr() -> None:
+    print("Polling for QR code (this takes ~10-20s)…")
+    for _ in range(60):
+        try:
+            r = _get(f"/instance/connectionState/{INSTANCE}")
+            if r.status_code == 200:
+                state = r.json().get("instance", {}).get("state", "")
+                print(f"  state={state}")
+                if state in ("open", "CONNECTED"):
+                    print("\n  Already connected! Skipping QR.")
+                    return
+                if state not in ("", "close"):
+                    # Try to open QR
+                    qr_url = f"{BACKEND_URL}/setup/qr-image"
+                    print(f"\n  QR code available. Opening browser: {qr_url}")
+                    print("  IMPORTANT: Scan with your DEDICATED BOT NUMBER, not your primary number.")
+                    try:
+                        webbrowser.open(qr_url)
+                    except Exception:
+                        pass
+                    poll_connected()
+                    return
+        except Exception:
+            pass
+        time.sleep(3)
+    print("Could not get QR state. Check docker logs whatsapp_openwa")
+
+
+def poll_connected() -> None:
+    print("Waiting for WhatsApp connection (scan QR now)…")
+    for _ in range(120):
+        try:
+            r = _get(f"/instance/connectionState/{INSTANCE}")
+            if r.status_code == 200:
+                state = r.json().get("instance", {}).get("state", "")
+                print(f"  state={state}")
+                if state in ("open", "CONNECTED"):
+                    print("\n  WhatsApp connected!")
+                    return
+        except Exception:
+            pass
+        time.sleep(3)
+    sys.exit("Connection timed out. Restart and try again.")
+
+
+def verify_webhook() -> None:
+    print("Verifying webhook registration…")
+    r = _get(f"/webhook/find/{INSTANCE}")
+    if r.status_code == 200:
+        data = r.json()
+        url = data.get("url") or "(none)"
+        print(f"  Webhook URL: {url}")
+        if "webhook/openwa" in url:
+            print("  Webhook is correctly set.")
+        else:
+            print("  Webhook URL doesn't match — updating…")
+            _post(f"/webhook/set/{INSTANCE}", {
+                "url": WEBHOOK_URL, "byEvents": True, "base64": False,
+                "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+            })
+    else:
+        print(f"  Could not read webhook: {r.status_code}")
 
 
 def main() -> None:
-    print(f"OpenWA setup for session '{SESSION_ID}' at {OPENWA_BASE}")
-    wait_for_openwa()
-    create_session()
-    start_session()
-    poll_status()
-    register_webhook()
-    print("\nDone. Send yourself a WhatsApp message and watch the backend logs.")
+    print("=" * 55)
+    print(" WhatsApp Agent — First-Run Setup (Evolution API)")
+    print("=" * 55)
+    print(f"  Instance : {INSTANCE}")
+    print(f"  API base : {EVOLUTION_BASE}")
+    print(f"  Webhook  : {WEBHOOK_URL}")
+    print()
+
+    wait_for_evolution()
+    create_instance()
+    poll_for_qr()
+    verify_webhook()
+
+    print("\nDone! Send a WhatsApp message to the bot number and watch:")
+    print(f"  docker logs -f whatsapp_calendar_agent_worker")
 
 
 if __name__ == "__main__":

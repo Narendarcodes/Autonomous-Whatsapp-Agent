@@ -1,19 +1,24 @@
-"""OpenWA webhook receiver.
+"""Evolution API webhook receiver.
 
-OpenWA event payload shape (message.received):
+Evolution API event payload (MESSAGES_UPSERT):
 {
-  "event": "message.received",
-  "sessionId": "my-session",
-  "idempotencyKey": "uuid-v4",
+  "event": "messages.upsert",
+  "instance": "my-session",
   "data": {
-    "id": {"_serialized": "true_628xxx@c.us_ABCD..."},
-    "body": "Hello",
-    "type": "chat",
-    "from": "628xxx@c.us"  (DM)  OR  "1234-5678@g.us" (group),
-    "author": "628xxx@c.us"  (ONLY for groups, the human sender),
-    "fromMe": false,
-    "timestamp": 1700000000,
-    "hasMedia": false
+    "key": {
+      "remoteJid": "919xxx@s.whatsapp.net"  or  "123-456@g.us",
+      "fromMe": false,
+      "id": "ABCD1234"
+    },
+    "message": {
+      "conversation": "Hello"         ← plain text
+      # or
+      "extendedTextMessage": { "text": "Hello" }
+    },
+    "messageType": "conversation",
+    "messageTimestamp": 1700000000,
+    "pushName": "Alice",
+    "participant": "919xxx@s.whatsapp.net"  ← only in groups (actual sender)
   }
 }
 """
@@ -36,34 +41,53 @@ router = APIRouter()
 logger = get_logger(__name__)
 
 
-def _parse_openwa_event(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract a normalized message dict, or None if this event should be skipped."""
-    if payload.get("event") != "message.received":
+def _extract_text(message: dict) -> str:
+    """Pull plain text from an Evolution API message object."""
+    return (
+        message.get("conversation")
+        or (message.get("extendedTextMessage") or {}).get("text")
+        or (message.get("imageMessage") or {}).get("caption")
+        or ""
+    ).strip()
+
+
+def _parse_evolution_event(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract a normalised message dict, or None to skip."""
+    # Evolution sends the event name as "messages.upsert"
+    if payload.get("event") not in ("messages.upsert", "MESSAGES_UPSERT"):
         return None
 
     data = payload.get("data") or {}
-    if data.get("fromMe"):
-        return None  # don't react to our own messages
-    if data.get("type") != "chat":
-        return None  # ignore media, stickers, system events
-    if data.get("isStatus"):
-        return None  # ignore status broadcasts
+    key = data.get("key") or {}
 
-    body = (data.get("body") or "").strip()
+    if key.get("fromMe"):
+        return None  # ignore messages sent by the bot
+
+    remote_jid = key.get("remoteJid") or ""
+    if not remote_jid:
+        return None
+
+    msg_obj = data.get("message") or {}
+    body = _extract_text(msg_obj)
     if not body:
         return None
 
-    from_jid = data.get("from") or ""
-    author_jid = data.get("author") or ""
-    is_group = "@g.us" in from_jid
+    is_group = "@g.us" in remote_jid
+    participant = data.get("participant") or ""  # set only in groups
 
     if is_group:
-        sender_jid = author_jid or from_jid
-        sender_phone = sender_jid.replace("@c.us", "").replace("@s.whatsapp.net", "").lstrip("+")
-        chat_id = from_jid  # the group JID — we'll reply here
+        sender_jid = participant or remote_jid
+        chat_id = remote_jid
     else:
-        sender_phone = from_jid.replace("@c.us", "").replace("@s.whatsapp.net", "").lstrip("+")
-        chat_id = from_jid
+        sender_jid = remote_jid
+        chat_id = remote_jid
+
+    sender_phone = (
+        sender_jid
+        .replace("@s.whatsapp.net", "")
+        .replace("@c.us", "")
+        .lstrip("+")
+    )
 
     return {
         "sender_phone": sender_phone,
@@ -71,8 +95,8 @@ def _parse_openwa_event(payload: dict[str, Any]) -> dict[str, Any] | None:
         "is_group": is_group,
         "group_id": chat_id if is_group else "",
         "message_text": body,
-        "message_id": (data.get("id") or {}).get("_serialized", ""),
-        "timestamp": str(data.get("timestamp", "")),
+        "message_id": key.get("id", ""),
+        "timestamp": str(data.get("messageTimestamp", "")),
     }
 
 
@@ -92,10 +116,14 @@ async def _get_or_create_user(db: AsyncSession, wa_phone: str) -> User:
 
 
 @router.post("/webhook/openwa")
-async def openwa_webhook(request: Request) -> dict[str, str]:
+async def evolution_webhook(request: Request) -> dict[str, str]:
     raw_body = await request.body()
-    signature = request.headers.get("X-OpenWA-Signature") or request.headers.get("x-openwa-signature")
 
+    # Evolution API can sign webhooks with a secret — use same HMAC check
+    signature = (
+        request.headers.get("X-Evolution-Signature")
+        or request.headers.get("x-evolution-signature")
+    )
     if not verify_openwa_signature(raw_body, signature):
         logger.warning("Webhook signature verification failed")
         raise HTTPException(status_code=401, detail="Invalid signature")
@@ -106,33 +134,31 @@ async def openwa_webhook(request: Request) -> dict[str, str]:
         logger.error("Bad JSON in webhook: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
 
-    # Idempotency — OpenWA may retry on transient failures
-    idem_key = payload.get("idempotencyKey") or payload.get("deliveryId") or ""
+    # Idempotency using the message ID
+    idem_key = (
+        payload.get("idempotencyKey")
+        or (((payload.get("data") or {}).get("key") or {}).get("id"))
+        or ""
+    )
     if idem_key and not await check_idempotency(idem_key):
-        logger.info("Duplicate webhook %s — skipping", idem_key)
         return {"status": "duplicate"}
 
-    parsed = _parse_openwa_event(payload)
+    parsed = _parse_evolution_event(payload)
     if parsed is None:
         return {"status": "ignored"}
 
-    # Rate limit per sender
     if not await check_rate_limit(parsed["sender_phone"]):
         logger.warning("Rate limit exceeded for %s", parsed["sender_phone"])
         return {"status": "rate_limited"}
 
-    # Look up or create user (the human sender — not the group)
     async with AsyncSessionLocal() as db:
         user = await _get_or_create_user(db, parsed["sender_phone"])
-        # Ensure owner's DM is in allow_all on first run
         await security_service.ensure_owner_allowed(db, settings.OWNER_WA_PHONE.lstrip("+"))
-        # ACL check — happens before anything hits Redis
         effective_mode = await security_service.evaluate(
             db, parsed["chat_id"], parsed["sender_phone"], user
         )
 
     if effective_mode == "block":
-        logger.debug("Blocked message from %s in %s", parsed["sender_phone"], parsed["chat_id"])
         return {"status": "blocked"}
 
     if effective_mode == "silent_log":
