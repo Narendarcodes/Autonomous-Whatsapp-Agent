@@ -43,8 +43,21 @@ class Settings(BaseSettings):
     OPENWA_WEBHOOK_URL: str = "http://backend:8000/webhook/openwa"
     OWNER_WA_PHONE: str = ""
 
-    # LLM
-    LLM_PROVIDER: Literal["github", "google", "anthropic", "ollama"] = "github"
+    # Hermes Agent
+    HERMES_BASE_URL: str = "http://hermes:8642"
+    HERMES_API_KEY: str = "hermes_api_key_change_me"
+
+    # LiteLLM proxy
+    LITELLM_BASE_URL: str = "http://litellm:4000"
+    LITELLM_MASTER_KEY: str = "litellm_master_key_change_me"
+
+    # Additional LLM provider keys (all optional — LiteLLM uses whichever are set)
+    GROQ_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""
+    NVIDIA_NIM_API_KEY: str = ""
+
+    # Security ACL
+    PREFERENCE_PROMOTION_THRESHOLD: int = 5   # confirmations before proposing auto
     LLM_MODEL: str = "gpt-4o-mini"
     LLM_TEMPERATURE: float = 0.3
     GITHUB_TOKEN: str = ""

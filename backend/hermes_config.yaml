@@ -1,0 +1,77 @@
+# Hermes Agent Configuration
+# Place this at /opt/data/config.yaml inside the Hermes container.
+# The docker-compose volume mount handles this automatically.
+# Docs: https://hermes-agent.nousresearch.com/docs/user-guide/configuration
+
+# ==================== LLM BACKEND ====================
+# Point Hermes at the LiteLLM proxy so all requests go through
+# the fallback chain.
+model:
+  provider: openai-compatible
+  base_url: http://litellm:4000/v1
+  api_key: ${LITELLM_MASTER_KEY}
+  name: hermes-llm                  # must match model_name in litellm_config.yaml
+  max_tokens: 4096
+  temperature: 0.3
+
+# ==================== API SERVER ====================
+# Exposes an OpenAI-compatible HTTP API that our FastAPI calls.
+api_server:
+  enabled: true
+  host: 0.0.0.0                    # expose on all interfaces inside Docker network
+  port: 8642
+  key: ${HERMES_API_KEY}           # Bearer token our FastAPI sends
+  cors_origins:
+    - "http://backend:8000"
+    - "http://localhost:8000"
+
+# ==================== MEMORY ====================
+# Persistent Skill Documents — survives container restarts.
+memory:
+  enabled: true
+  backend: sqlite                   # stored in /opt/data/memory.db
+  max_tokens_per_doc: 2000
+  max_docs: 500
+
+# ==================== MCP TOOLS ====================
+# Register our FastAPI-backed MCP server so Hermes can call
+# our calendar / drive / future tools.
+mcp:
+  servers:
+    - name: whatsapp-agent-tools
+      url: http://mcp-server:9000   # our MCP service (see docker-compose)
+      transport: sse                # Server-Sent Events transport
+      auth: none                    # internal Docker network — no auth needed
+
+# ==================== MESSAGING GATEWAYS ====================
+# WhatsApp gateway MUST remain disabled — we use OpenWA for
+# WhatsApp transport; running both on one number is not possible.
+messaging:
+  whatsapp:
+    enabled: false
+  telegram:
+    enabled: false
+  discord:
+    enabled: false
+
+# ==================== BUILT-IN TOOLS ====================
+# Hermes' own built-in tools — enable what's safe, disable
+# anything that could cause unintended side effects.
+tools:
+  terminal:
+    enabled: false                  # never allow shell execution from chat
+  file_operations:
+    enabled: false                  # files managed through our MCP tools instead
+  web_search:
+    enabled: true                   # allow web search (useful for Q&A queries)
+  web_browser:
+    enabled: false                  # no headless browser needed
+  image_generation:
+    enabled: false
+  vision:
+    enabled: false                  # add later when voice/image phase begins
+
+# ==================== LOGGING ====================
+logging:
+  level: info
+  file: /opt/data/hermes.log

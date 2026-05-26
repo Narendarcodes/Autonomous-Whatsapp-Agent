@@ -21,6 +21,7 @@ from app.db.redis_client import (
 from app.models.models import EventCache, PendingDecision, User
 from app.services.agent_engine import agent_engine
 from app.services.calendar_service import calendar_service
+from app.services.command_parser import handle_command
 from app.services.permission_service import permission_service
 from app.services.proactive_service import proactive_service
 from app.services.whatsapp_service import whatsapp_service
@@ -112,6 +113,13 @@ async def _process_one(stream_id: str, fields: dict) -> None:
         # Only the owner can resolve.
         is_owner_msg = sender_phone == settings.OWNER_WA_PHONE.lstrip("+") and not is_group
         if is_owner_msg:
+            # Check for slash commands before anything else
+            async with AsyncSessionLocal() as db:
+                cmd_reply = await handle_command(db, user.id, message_text)
+                if cmd_reply is not None:
+                    await whatsapp_service.send_text(settings.OWNER_WA_PHONE, cmd_reply)
+                    return
+
             decision = await permission_service.try_resolve(db, message_text)
             if decision is not None:
                 if decision.status == "approved":

@@ -47,6 +47,94 @@ services:
     networks:
       - calendar_network
 
+  # ==================== LITELLM (Model Fallback Router) ====================
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: whatsapp_litellm
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-litellm_master_key_change_me}
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+    volumes:
+      - ../backend/litellm_config.yaml:/app/config.yaml:ro
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - calendar_network
+
+  # ==================== HERMES AGENT (AI Brain + Memory) ====================
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: whatsapp_hermes
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      HERMES_API_KEY: ${HERMES_API_KEY:-hermes_api_key_change_me}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-litellm_master_key_change_me}
+    volumes:
+      - hermes_data:/opt/data
+      - ../backend/hermes_config.yaml:/opt/data/config.yaml:ro
+    ports:
+      - "8642:8642"
+    depends_on:
+      litellm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8642/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - calendar_network
+
+  # ==================== MCP SERVER (Tool Bridge for Hermes) ====================
+  mcp-server:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
+    container_name: whatsapp_mcp_server
+    restart: unless-stopped
+    command: python -m app.mcp_server.main
+    env_file:
+      - ../backend/.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "9000:9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../backend/app:/app/app:ro
+      - token_storage:/app/tokens
+    networks:
+      - calendar_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   # ==================== OPENWA (WhatsApp Protocol Adapter) ====================
   openwa:
     image: openwa/openwa:latest
@@ -112,6 +200,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       OPENWA_BASE_URL: http://openwa:2785
+      HERMES_BASE_URL: http://hermes:8642
+      LITELLM_BASE_URL: http://litellm:4000
 
     ports:
       - "8000:8000"
@@ -120,6 +210,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      hermes:
         condition: service_healthy
 
     volumes:
@@ -238,6 +330,10 @@ volumes:
   openwa_data:
     driver: local
     name: whatsapp_openwa_data
+
+  hermes_data:
+    driver: local
+    name: whatsapp_hermes_data
 
 # ==================== NETWORKS ====================
 networks:

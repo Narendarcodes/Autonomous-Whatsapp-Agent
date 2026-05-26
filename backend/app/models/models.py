@@ -104,7 +104,67 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
-class Session(Base):
+class ChatACL(Base):
+    __tablename__ = "chat_acl"
+
+    chat_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    is_group: Mapped[bool] = mapped_column(Boolean, default=False)
+    mode: Mapped[str] = mapped_column(String(16), default="silent_log")
+    memory_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    voice_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SenderACL(Base):
+    __tablename__ = "sender_acl"
+
+    sender_phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    trust_level: Mapped[str] = mapped_column(String(16), default="unknown")
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"))
+    key: Mapped[str] = mapped_column(String(64))
+    value: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), default="explicit")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_user_pref_key"),)
+
+
+class PreferenceProposal(Base):
+    __tablename__ = "preference_proposals"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"))
+    action_class: Mapped[str] = mapped_column(String(64))
+    target_id: Mapped[str | None] = mapped_column(String(128))
+    confirmation_count: Mapped[int] = mapped_column(default=0)
+    proposed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted: Mapped[bool | None] = mapped_column(Boolean)
+    declined_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "action_class", "target_id", name="uq_proposal"),
+    )
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))

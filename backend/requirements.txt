@@ -57,7 +57,9 @@ flake8==7.0.0
 mypy==1.9.0
 isort==5.13.2
 
-# ==================== OPTIONAL ====================
+# ==================== MCP (Tool Bridge for Hermes) ====================
+mcp[cli]>=1.6.0
+fastmcp>=2.3.0
 # Monitoring (optional)
 # prometheus-client==0.20.0
 

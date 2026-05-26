@@ -29,7 +29,8 @@ from app.core.logging import get_logger
 from app.core.security import verify_openwa_signature
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import check_idempotency, check_rate_limit, enqueue_message
-from app.models.models import User
+from app.models.models import AuditLog, User
+from app.services.security_service import security_service
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -123,6 +124,31 @@ async def openwa_webhook(request: Request) -> dict[str, str]:
     # Look up or create user (the human sender — not the group)
     async with AsyncSessionLocal() as db:
         user = await _get_or_create_user(db, parsed["sender_phone"])
+        # Ensure owner's DM is in allow_all on first run
+        await security_service.ensure_owner_allowed(db, settings.OWNER_WA_PHONE.lstrip("+"))
+        # ACL check — happens before anything hits Redis
+        effective_mode = await security_service.evaluate(
+            db, parsed["chat_id"], parsed["sender_phone"], user
+        )
+
+    if effective_mode == "block":
+        logger.debug("Blocked message from %s in %s", parsed["sender_phone"], parsed["chat_id"])
+        return {"status": "blocked"}
+
+    if effective_mode == "silent_log":
+        async with AsyncSessionLocal() as db:
+            db.add(AuditLog(
+                user_id=user.id,
+                action="message.silent_log",
+                details={
+                    "chat_id": parsed["chat_id"],
+                    "sender": parsed["sender_phone"],
+                    "is_group": parsed["is_group"],
+                    "preview": parsed["message_text"][:100],
+                },
+            ))
+            await db.commit()
+        return {"status": "silent_log"}
 
     stream_payload = {
         "user_id": user.id,
