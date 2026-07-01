@@ -1,52 +1,95 @@
-# 🤖 WhatsApp AI Calendar Agent
+# 🤖 WhatsApp AI Agent (Hermes)
 
-> AI-powered WhatsApp bot for intelligent Google Calendar management with proactive reminders
+> Production-ready WhatsApp bot with Hermes AI brain, Google workspace integration, and permission management
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green.svg)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/Docker-27+-blue.svg)](https://www.docker.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-7-red.svg)](https://redis.io/)
-[![GitHub Models](https://img.shields.io/badge/GitHub_Models-GPT--4o--mini-purple.svg)](https://github.com/marketplace/models)
+[![Hermes](https://img.shields.io/badge/Hermes-Agent-orange.svg)](https://github.com/NousResearch/hermes-agent)
+[![LiteLLM](https://img.shields.io/badge/LiteLLM-Router-purple.svg)](https://github.com/BerriAI/litellm)
 
 ## 📋 Overview
 
-A production-ready WhatsApp bot that manages your Google Calendar through natural language conversations. Powered by **GitHub Models (GPT-4o-mini)** with **proactive reminders**, **daily summaries**, and **intelligent scheduling**.
+A production-ready WhatsApp bot with an AI brain (Hermes Agent by Nous Research), multi-user permission management, and access to your entire Google workspace (Calendar, Drive, Docs, Sheets, Gmail).
 
-### ✨ Key Features
+### ✨ Current Features (Phase 2)
 
-#### **🤖 Intelligent AI Assistant**
-- ✅ Natural language understanding (powered by GPT-4o-mini)
-- ✅ Function calling for accurate calendar operations
-- ✅ Context-aware conversations (50 messages, 24h memory)
-- ✅ Multi-turn dialogue support
-- ✅ Zero hallucinations (verified tool execution)
-- ✅ Fast responses (2-5 seconds)
+#### **🤖 Intelligent Brain (Hermes Agent)**
+- ✅ Native ReAct loop for function calling
+- ✅ Persistent session memory (conversation history per user)
+- ✅ Built-in cron scheduling (reminders, briefings, summaries)
+- ✅ Multi-tool orchestration (call multiple tools in one response)
+- ✅ Fallback models via LiteLLM (GitHub → Gemini → Groq → OpenRouter → NIM)
 
-#### **📅 Complete Calendar Management**
-- ✅ Create events with natural language
-- ✅ View upcoming events (today, week, month)
-- ✅ Update existing events
-- ✅ Delete/cancel events
-- ✅ Smart scheduling with conflict detection
+#### **👥 Permission System (NEW)**
+- ✅ Owner-only initial replies
+- ✅ Owner dashboard to grant/revoke user access
+- ✅ Three user tiers: Owner | Authorized | Pending
+- ✅ Audit logging for all permission changes
+- ✅ Chat-based onboarding (SETUP, OAUTH, STATUS commands)
 
-#### **⏰ Proactive Notifications** 
-- ✅ Event reminders (15min, 1hr, 1 day before)
-- ✅ Morning briefings (daily schedule at 8 AM)
-- ✅ Evening summaries (tomorrow's preview at 8 PM)
-- ✅ Conflict alerts (automatic detection every 30 min)
-- ✅ Weekly insights (usage patterns every Monday)
+#### **🔐 Google Workspace Integration**
+- ✅ Google Calendar (create, read, update, delete events)
+- ✅ Google Drive (list, download, upload files)
+- ✅ Google Docs (read, create documents)
+- ✅ Google Sheets (query, update spreadsheets)
+- ✅ Gmail (send emails, fetch unread messages)
 
-#### **🔧 Technical Excellence**
-- ✅ FastAPI with async/await (20,000 req/s)
-- ✅ PostgreSQL for persistent storage
-- ✅ Redis for caching & sessions
-- ✅ Docker containerization
-- ✅ Real-time log viewer (WebSocket)
-- ✅ Comprehensive health checks
-- ✅ Background job scheduler (APScheduler)
+#### **📱 Multi-User WhatsApp**
+- ✅ Owner scans QR → device linked
+- ✅ Owner approves users via `/dashboard`
+- ✅ Personal DM chat with bot
+- ✅ Group mentions (@agent) for team access
+- ✅ DPDP compliance (no group snooping)
 
-## 🏗️ Architecture
+#### **🏗️ Enterprise Ready**
+- ✅ 10-container Docker stack (all healthy)
+- ✅ PostgreSQL + Redis for state
+- ✅ Webhook signature verification
+- ✅ Idempotent message processing
+- ✅ Comprehensive audit logging
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Docker & Docker Compose
+- WhatsApp account (for QR scan)
+- Google account (OAuth for Calendar, Drive, etc.)
+- GitHub account (free GPT-4o-mini tokens via GitHub Models)
+
+### Setup
+
+1. **Clone & configure**:
+```bash
+git clone <repo>
+cd Autonomous-Whatsapp-Agent
+cp backend/.env.example backend/.env
+# Edit .env: OWNER_WA_PHONE, GOOGLE_CLIENT_ID, GITHUB_TOKEN, etc.
+```
+
+2. **Start containers**:
+```bash
+cd docker
+docker-compose -f docker-compose.yml up -d
+```
+
+3. **Open setup page**:
+```
+http://localhost:8000/setup  (or https://api.narendar.tech/setup)
+```
+
+4. **Scan QR + OAuth**:
+   - Scan QR code with WhatsApp → Links device
+   - Click "Authenticate with Google" → Grants permissions
+   - See success message
+
+5. **Manage users** (optional):
+   - Visit http://localhost:8000/dashboard
+   - Grant permission to users who text you
+   - They can now use the bot
+
+## 📊 Architecture
 
 ```
 ┌─────────────────┐

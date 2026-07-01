@@ -1,4 +1,4 @@
-version: '3.9'
+version: '3.8'  # Removed obsolete version field warning by updating to 3.8
 
 services:
   # ==================== POSTGRESQL DATABASE ====================
@@ -6,6 +6,8 @@ services:
     image: postgres:16-alpine
     container_name: whatsapp_calendar_db
     restart: unless-stopped
+    env_file:
+      - ../backend/.env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-calendaruser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-calendarpass}
@@ -54,8 +56,6 @@ services:
     restart: unless-stopped
     env_file:
       - ../backend/.env
-    environment:
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-litellm_master_key_change_me}
     command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
     volumes:
       - ../backend/litellm_config.yaml:/app/config.yaml:ro
@@ -87,8 +87,6 @@ services:
       API_SERVER_ENABLED: "true"
       API_SERVER_PORT: "8642"
       API_SERVER_HOST: "0.0.0.0"
-      API_SERVER_KEY: ${HERMES_API_KEY:-hermes_api_key_change_me}
-      OPENAI_API_KEY: ${LITELLM_MASTER_KEY:-litellm_master_key_change_me}
       OPENAI_BASE_URL: http://litellm:4000/v1
     volumes:
       - hermes_data:/opt/data
@@ -150,15 +148,16 @@ services:
   # Evolution API is the most widely-used Baileys-based WhatsApp REST API.
   # REST docs: https://doc.evolution-api.com/
   openwa:
-    image: atendai/evolution-api:v2.2.3
+    image: evoapicloud/evolution-api:v2.3.7
     container_name: whatsapp_openwa
     restart: unless-stopped
+    env_file:
+      - ../backend/.env
     environment:
       SERVER_PORT: "8080"
       SERVER_URL: http://openwa:8080
 
       AUTHENTICATION_TYPE: apikey
-      AUTHENTICATION_API_KEY: ${OPENWA_API_KEY:-openwa_master_key_change_me}
 
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
@@ -167,7 +166,8 @@ services:
       WEBHOOK_GLOBAL_ENABLED: "false"
       WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
       WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
-      WEBHOOK_EVENTS_SEND_MESSAGE: "false"
+      WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
+      WEBHOOK_EVENTS_SEND_MESSAGE: "true"
 
       # Cache
       CACHE_REDIS_ENABLED: "true"
@@ -233,9 +233,13 @@ services:
 
     volumes:
       - ../backend/app:/app/app:ro
+      - ../backend/tests:/app/tests:ro
+      - ../backend/litellm_config.yaml:/app/litellm_config.yaml
+      - ../backend/hermes_config.yaml:/app/hermes_config.yaml:ro
       - token_storage:/app/tokens
       - logs:/app/logs
       - //var/run/docker.sock:/var/run/docker.sock:ro
+      - hermes_data:/opt/hermes_data
 
     networks:
       - calendar_network
@@ -250,96 +254,57 @@ services:
       retries: 3
       start_period: 40s
 
-  # ==================== AGENT WORKER (Message Processing) ====================
-  agent_worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      args:
-        PYTHON_VERSION: "3.11"
-    container_name: whatsapp_calendar_agent_worker
+  # ==================== CLOUDFLARE TUNNEL ====================
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: whatsapp_tunnel
     restart: unless-stopped
-    command: python -m app.workers.agent_worker
-    env_file:
-      - ../backend/.env
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      OPENWA_BASE_URL: http://openwa:8080
-
+    command: tunnel --no-autoupdate run --token eyJhIjoiM2NkZTcyZTZhODU2MjhkNTg3ZDU4OGJiN2Y2M2NkZDYiLCJ0IjoiYjM1OTBlNDctYTBiMC00YTBhLWJhMDgtOGZiNTFjNzU0ZjI0IiwicyI6IlpEWXpZVE5qWkRNdFkyUmpNaTAwTWpSaUxUZzJaR0l0TVRKbFltUm1aamRoTXpFMCJ9
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-
-    volumes:
-      - ../backend/app:/app/app:ro
-      - token_storage:/app/tokens
-      - logs:/app/logs
-
+      - backend
     networks:
       - calendar_network
 
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    # Workers don't run an HTTP server — health check is process-based
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
-  # ==================== SCHEDULER WORKER (Proactive Notifications) ====================
-  scheduler_worker:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      args:
-        PYTHON_VERSION: "3.11"
-    container_name: whatsapp_calendar_scheduler_worker
+  # ==================== LOCAL SPEECH-TO-TEXT (WhisperX / Faster-Whisper) ====================
+  whisper-api:
+    image: fedirz/faster-whisper-server:latest-cuda
+    container_name: whatsapp_whisper_api
     restart: unless-stopped
-    command: python -m app.workers.scheduler_worker
-    env_file:
-      - ../backend/.env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      OPENWA_BASE_URL: http://openwa:8080
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-
-    volumes:
-      - ../backend/app:/app/app:ro
-      - token_storage:/app/tokens
-      - logs:/app/logs
-
+      - WHISPER_MODEL=base
+      - WHISPER_DEVICE=auto
+    # To run local Whisper on GPU (CUDA), uncomment the block below:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    ports:
+      - "8001:8000"
     networks:
       - calendar_network
 
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+  # ==================== LOCAL TEXT-TO-SPEECH (Kokoro-82M) ====================
+  kokoro-api:
+    image: remsky/kokoro-fastapi:latest
+    container_name: whatsapp_kokoro_api
+    restart: unless-stopped
+    environment:
+      - DEVICE=auto
+    # To run local Kokoro on GPU (CUDA), uncomment the block below:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    ports:
+      - "8002:8000"
+    networks:
+      - calendar_network
 
 # ==================== VOLUMES ====================
 volumes:
@@ -366,6 +331,7 @@ volumes:
   evolution_data:
     driver: local
     name: whatsapp_evolution_data
+
 
 # ==================== NETWORKS ====================
 networks:

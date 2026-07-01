@@ -2,22 +2,29 @@
 # Secrets come from environment variables set in docker-compose.
 # Docs: https://hermes-agent.nousresearch.com/docs/user-guide/configuration
 
+# ==================== NAMED CUSTOM PROVIDER ====================
+# Register our LiteLLM proxy as a named custom provider.
+# This is the correct way to use an OpenAI-compatible proxy endpoint.
+custom_providers:
+  - name: litellm
+    base_url: http://litellm:4000/v1
+    api_key_env: OPENAI_API_KEY
+
 # ==================== LLM BACKEND ====================
-# Use 'openai' provider for any OpenAI-compatible endpoint (including LiteLLM).
-# api_key is read from OPENAI_API_KEY env var.
-# base_url is read from OPENAI_BASE_URL env var (set in docker-compose).
+# Point the model to our named custom provider "litellm".
+# model.default is the model ID to send in API requests (must match
+# what LiteLLM exposes in its model list).
 model:
-  provider: openai
-  name: hermes-llm
+  provider: "custom:litellm"
+  default: hermes-llm
   max_tokens: 4096
   temperature: 0.3
 
 # ==================== MCP TOOLS ====================
-mcp:
-  servers:
-    - name: whatsapp-agent-tools
-      url: http://mcp-server:9000/sse
-      transport: sse
+mcp_servers:
+  whatsapp-agent-tools:
+    url: http://mcp-server:9000/sse
+    transport: sse
 
 # ==================== MESSAGING GATEWAYS ====================
 # WhatsApp MUST stay disabled — we use OpenWA as the WhatsApp layer.
@@ -32,17 +39,17 @@ messaging:
 # ==================== BUILT-IN TOOLS ====================
 tools:
   terminal:
-    enabled: false
+    enabled: true
   file_operations:
-    enabled: false
+    enabled: true
   web_search:
     enabled: true
   web_browser:
-    enabled: false
+    enabled: true
   image_generation:
-    enabled: false
+    enabled: true
   vision:
-    enabled: false
+    enabled: true
 
 # ==================== LOGGING ====================
 logging:

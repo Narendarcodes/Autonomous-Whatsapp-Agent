@@ -39,6 +39,9 @@ openai>=1.30.0       # Hermes agent engine uses the OpenAI SDK
 python-dotenv>=1.0.1
 python-dateutil>=2.9.0
 orjson>=3.10.0
+edge-tts==6.1.10
+psutil>=5.9.8
+phonenumbers>=8.13.0   # Google libphonenumber — phone format, country code, national plan validation
 
 # ==================== SECURITY ====================
 cryptography>=42.0.5

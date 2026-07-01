@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     OPENWA_WEBHOOK_SECRET: str = ""
     OPENWA_WEBHOOK_URL: str = "http://backend:8000/webhook/openwa"
     OWNER_WA_PHONE: str = ""
+    BOT_RELATIONSHIP_MODE: str = "self_chat"
 
     # Hermes Agent
     HERMES_BASE_URL: str = "http://hermes:8642"
@@ -72,6 +73,16 @@ class Settings(BaseSettings):
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/oauth/callback"
     GOOGLE_SERVICE_ACCOUNT_FILE: str = "/app/google-service-account.json"
     TOKEN_ENCRYPTION_KEY: str = ""
+    ADMIN_PASSWORD: str = "admin123"
+    SESSION_SECRET_KEY: str = "super_secret_session_key_naru_change_me"
+
+    # Audio settings (STT: groq | local, TTS: edge | local)
+    STT_PROVIDER: str = "groq"
+    TTS_PROVIDER: str = "edge"
+    LOCAL_STT_URL: str = "http://whisper-api:8000/v1"
+    LOCAL_TTS_URL: str = "http://kokoro-api:8000/v1"
+    TTS_VOICE_CLOUD: str = "en-US-AvaNeural"
+    TTS_VOICE_LOCAL: str = "af_bella"
 
     # Agent
     AGENT_MAX_ITERATIONS: int = 5

@@ -1,0 +1,73 @@
+# LiteLLM Proxy Configuration Template
+# Self-hosted model gateway — sits between Hermes and LLM providers.
+# Hermes points its model URL at http://litellm:4000/v1
+# Docs: https://docs.litellm.ai/docs/proxy/configs
+
+model_list:
+  # Primary (Order 1): Groq Llama 3.3 70B — very fast, free tier, confirmed working (fails on large prompts due to low 12k TPM limit)
+  - model_name: hermes-llm
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+      order: 1
+    model_info:
+      id: groq-llama-70b
+
+  # Fallback 1 (Order 2): OpenRouter Free Google Gemma 4 31B (Very capable, free, supports tool use, no low TPM limits)
+  - model_name: hermes-llm
+    litellm_params:
+      model: openrouter/google/gemma-4-31b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      order: 2
+    model_info:
+      id: openrouter-gemma-31b
+
+  # Fallback 2 (Order 3): OpenRouter Free Google Gemma 4 26B (Very capable, free, supports tool use, no low TPM limits)
+  - model_name: hermes-llm
+    litellm_params:
+      model: openrouter/google/gemma-4-26b-a4b-it:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      order: 3
+    model_info:
+      id: openrouter-gemma-26b
+
+  # Fallback 3 (Order 4): Groq Llama 3.1 8B (higher TPM limits, fast)
+  - model_name: hermes-llm
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      order: 4
+    model_info:
+      id: groq-llama-8b
+
+  # Fallback 4 (Order 5): Google Gemini 1.5 Flash (Generous free tier via Google AI Studio)
+  - model_name: hermes-llm
+    litellm_params:
+      model: gemini/gemini-1.5-flash
+      api_key: os.environ/GOOGLE_AI_API_KEY
+      order: 5
+    model_info:
+      id: gemini-1.5-flash
+
+router_settings:
+  routing_strategy: simple-shuffle
+  retry_policy:
+    RateLimitError: 0          # immediately fallback on rate limit error (Groq low TPM limit)
+    ServiceUnavailableError: 3
+    TimeoutError: 2
+    AuthenticationError: 0    # don't retry bad keys
+    NotFoundError: 0          # don't retry missing models
+  allowed_fails: 2            # before marking a model as failed
+  cooldown_time: 30           # seconds before retrying a failed model
+
+litellm_settings:
+  success_callback: []
+  failure_callback: []
+  request_timeout: 45
+  drop_params: true           # silently drop unsupported params per provider
+  set_verbose: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/LITELLM_DATABASE_URL    # optional
+  store_model_in_db: false

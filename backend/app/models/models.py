@@ -27,6 +27,8 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(128))
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_permission: Mapped[bool] = mapped_column(Boolean, default=False)  # Owner grants permission to use bot
+    trust_level: Mapped[str] = mapped_column(String(16), default="trusted")
     google_access_token_enc: Mapped[str | None] = mapped_column(Text)
     google_refresh_token_enc: Mapped[str | None] = mapped_column(Text)
     google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -165,6 +167,9 @@ class PreferenceProposal(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "action_class", "target_id", name="uq_proposal"),
     )
+
+
+class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
@@ -173,3 +178,18 @@ class PreferenceProposal(Base):
     is_group: Mapped[bool] = mapped_column(Boolean, default=False)
     last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ApiKey(Base):
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)  # groq, openrouter, gemini
+    api_key_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+

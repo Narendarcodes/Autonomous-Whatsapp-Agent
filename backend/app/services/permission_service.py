@@ -106,7 +106,10 @@ class PermissionService:
         await db.refresh(decision)
 
         # Send DM to the OWNER (always — even if trigger came from another chat)
-        owner_target = settings.OWNER_WA_PHONE.lstrip("+")
+        from app.services.preferences_service import preferences_service
+        bot_phone = await preferences_service.get_owner_preference("bot_phone")
+        owner_target = (bot_phone or settings.OWNER_WA_PHONE).lstrip("+")
+        
         msg = _format_permission_message(action_type, proposed_action, code)
         await whatsapp_service.send_text(owner_target, msg)
 
@@ -145,9 +148,9 @@ class PermissionService:
             await db.commit()
             return decision
 
-        if any(v in verdict for v in ("yes", "approve", "ok", "y")):
+        if verdict in ("yes", "approve", "ok", "y"):
             decision.status = "approved"
-        elif any(v in verdict for v in ("no", "reject", "cancel", "n")):
+        elif verdict in ("no", "reject", "cancel", "n"):
             decision.status = "rejected"
         else:
             return None

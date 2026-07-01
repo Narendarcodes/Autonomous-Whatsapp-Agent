@@ -13,16 +13,31 @@ import os
 import sys
 import time
 import webbrowser
+from pathlib import Path
 
 import httpx
 
-EVOLUTION_BASE = os.environ.get("OPENWA_BASE_URL", "http://localhost:8080").replace(
-    "openwa:8080", "localhost:2785"
-)
+# Load .env from backend/ directory so we don't need env vars set manually
+_env_file = Path(__file__).parent.parent / "backend" / ".env"
+if _env_file.exists():
+    for line in _env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip())
+
+# Evolution API runs on container port 8080, mapped to host port 2785.
+# When running this script on the HOST machine, always use localhost:2785.
+_base = os.environ.get("OPENWA_BASE_URL", "http://openwa:8080")
+EVOLUTION_BASE = _base.replace("openwa:8080", "localhost:2785")
+if "openwa" in EVOLUTION_BASE:
+    EVOLUTION_BASE = "http://localhost:2785"
+
 API_KEY = os.environ.get("OPENWA_API_KEY", "openwa_master_key_change_me")
 INSTANCE = os.environ.get("OPENWA_SESSION_ID", "my-session")
 WEBHOOK_URL = os.environ.get("OPENWA_WEBHOOK_URL", "http://backend:8000/webhook/openwa")
 BACKEND_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "QRCODE_UPDATED"]
 
 HDR = {"apikey": API_KEY, "Content-Type": "application/json"}
 
@@ -33,6 +48,22 @@ def _get(path: str) -> httpx.Response:
 
 def _post(path: str, body: dict) -> httpx.Response:
     return httpx.post(f"{EVOLUTION_BASE.rstrip('/')}{path}", headers=HDR, json=body, timeout=10)
+
+
+def _qr_webhook_url() -> str:
+    if WEBHOOK_URL.endswith("/webhook/openwa"):
+        return WEBHOOK_URL.removesuffix("/webhook/openwa") + "/webhook/qr"
+    return WEBHOOK_URL.rstrip("/") + "/qr"
+
+
+def _webhook_payload() -> dict:
+    return {
+        "enabled": True,
+        "url": WEBHOOK_URL,
+        "byEvents": False,
+        "base64": True,
+        "events": WEBHOOK_EVENTS,
+    }
 
 
 def wait_for_evolution() -> None:
@@ -54,12 +85,8 @@ def create_instance() -> None:
         "instanceName": INSTANCE,
         "integration": "WHATSAPP-BAILEYS",
         "qrcode": True,
-        "webhook": {
-            "url": WEBHOOK_URL,
-            "byEvents": True,
-            "base64": False,
-            "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
-        },
+        "webhook": _webhook_payload(),
+        "qrcodeWebhook": {"url": _qr_webhook_url()},
     }
     r = _post("/instance/create", payload)
     if r.status_code in (200, 201):
@@ -68,10 +95,23 @@ def create_instance() -> None:
         print(f"  Instance '{INSTANCE}' already exists.")
     else:
         print(f"  Create returned {r.status_code}: {r.text[:200]}")
+    configure_webhook()
+
+
+def connect_instance() -> None:
+    try:
+        r = _get(f"/instance/connect/{INSTANCE}")
+        if r.status_code == 200:
+            print("  Connection/QR refresh requested.")
+        else:
+            print(f"  Connect returned {r.status_code}: {r.text[:200]}")
+    except Exception as exc:
+        print(f"  Connect request failed: {exc}")
 
 
 def poll_for_qr() -> None:
     print("Polling for QR code (this takes ~10-20s)…")
+    connect_instance()
     for _ in range(60):
         try:
             r = _get(f"/instance/connectionState/{INSTANCE}")
@@ -81,7 +121,13 @@ def poll_for_qr() -> None:
                 if state in ("open", "CONNECTED"):
                     print("\n  Already connected! Skipping QR.")
                     return
-                if state not in ("", "close"):
+                qr_ready = False
+                try:
+                    qr_status = httpx.get(f"{BACKEND_URL.rstrip('/')}/setup/qr-status", timeout=5).json()
+                    qr_ready = bool(qr_status.get("has_qr"))
+                except Exception:
+                    pass
+                if qr_ready or state not in ("", "close"):
                     # Try to open QR
                     qr_url = f"{BACKEND_URL}/setup/qr-image"
                     print(f"\n  QR code available. Opening browser: {qr_url}")
@@ -126,12 +172,17 @@ def verify_webhook() -> None:
             print("  Webhook is correctly set.")
         else:
             print("  Webhook URL doesn't match — updating…")
-            _post(f"/webhook/set/{INSTANCE}", {
-                "url": WEBHOOK_URL, "byEvents": True, "base64": False,
-                "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
-            })
+            configure_webhook()
     else:
         print(f"  Could not read webhook: {r.status_code}")
+
+
+def configure_webhook() -> None:
+    r = _post(f"/webhook/set/{INSTANCE}", {"webhook": _webhook_payload()})
+    if r.status_code in (200, 201):
+        print("  Webhook configured.")
+    else:
+        print(f"  Webhook configure returned {r.status_code}: {r.text[:200]}")
 
 
 def main() -> None:

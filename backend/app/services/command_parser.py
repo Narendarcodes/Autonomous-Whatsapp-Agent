@@ -76,6 +76,8 @@ async def handle_command(
             return await _cmd_set(db, user_id, args)
         if cmd == "show":
             return await _cmd_show(db, user_id, args)
+        if cmd == "configure":
+            return await _cmd_configure(db, user_id, args)
     except Exception as exc:
         logger.exception("Command /%s failed: %s", cmd, exc)
         return f"Command error: {exc}"
@@ -130,6 +132,13 @@ async def _cmd_quiet(db: AsyncSession, user_id: str, args: str) -> str:
     if not pattern:
         return "Usage: /quiet HH:MM-HH:MM  (e.g. /quiet 22:00-07:00)"
     start, end = pattern.group(1), pattern.group(2)
+    try:
+        h_s, m_s = map(int, start.split(":"))
+        h_e, m_e = map(int, end.split(":"))
+        if not (0 <= h_s < 24 and 0 <= m_s < 60 and 0 <= h_e < 24 and 0 <= m_e < 60):
+            raise ValueError()
+    except Exception:
+        return "Usage: /quiet HH:MM-HH:MM  (e.g. /quiet 22:00-07:00)"
     await preferences_service.set(user_id, "quiet_hours_start", start)
     await preferences_service.set(user_id, "quiet_hours_end", end)
     _audit(db, user_id, "prefs.quiet_hours", {"start": start, "end": end})
@@ -169,6 +178,8 @@ async def _cmd_set(db: AsyncSession, user_id: str, args: str) -> str:
     if len(parts) < 2:
         return "Usage: /set <key> <value>"
     key, value = parts[0], parts[1]
+    if key == "bot_mode" and value not in ("self_chat", "dual_number"):
+        return "Error: bot_mode must be 'self_chat' or 'dual_number'"
     await preferences_service.set(user_id, key, value, source="explicit")
     return f"Preference saved: {key} = {value}"
 
@@ -210,6 +221,31 @@ async def _cmd_show(db: AsyncSession, user_id: str, args: str) -> str:
         return "Chat ACL:\n" + "\n".join(lines)
 
     return "Usage: /show prefs | /show audit [N] | /show acl"
+
+
+async def _cmd_configure(db: AsyncSession, user_id: str, args: str) -> str:
+    from app.core.config import settings
+    bot_mode = await preferences_service.get(user_id, "bot_mode", settings.BOT_RELATIONSHIP_MODE)
+    return f"""🛠️ *AI Assistant Chat Configuration*
+
+Current Bot Mode: *{bot_mode}*
+
+Use these command shortcuts to configure your assistant:
+• `/set bot_mode <self_chat|dual_number>` - Toggle relationship mode
+• `/set <key> <value>` - Set configuration preference
+• `/show prefs` - Show current configuration
+• `/allow <phone>` - Authorize user or group JID
+• `/block <phone>` - Block user or group JID
+• `/silence <phone>` - Log-only mode for user/group JID
+• `/trust <phone>` - Set user trust to VIP
+• `/untrust <phone>` - Reset user trust to normal
+• `/quiet HH:MM-HH:MM` - Set quiet hours (e.g. `/quiet 22:00-07:00`)
+• `/memory-on <JID>` / `/memory-off <JID>` - Toggle chat memory
+• `/voice-on <JID>` / `/voice-off <JID>` - Toggle voice transcription
+
+🌐 *Web Configuration Dashboard:*
+{settings.BASE_URL}/dashboard
+"""
 
 
 def _audit(db: AsyncSession, user_id: str, action: str, details: dict) -> None:

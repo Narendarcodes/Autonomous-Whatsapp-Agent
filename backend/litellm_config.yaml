@@ -1,71 +1,56 @@
-# LiteLLM Proxy Configuration
-# Self-hosted model gateway — sits between Hermes and LLM providers.
-# Hermes points its model URL at http://litellm:4000/v1
-# Docs: https://docs.litellm.ai/docs/proxy/configs
-
 model_list:
-  # Virtual model name Hermes will request
-  - model_name: hermes-llm
-    litellm_params:
-      model: azure/gpt-4o-mini                        # GitHub Models (Azure-hosted)
-      api_base: https://models.inference.ai.azure.com
-      api_key: os.environ/GITHUB_TOKEN
-    model_info:
-      id: github-gpt4o-mini
-
-  - model_name: hermes-llm
-    litellm_params:
-      model: gemini/gemini-2.0-flash-exp               # Google AI Studio — 1M tokens/day free
-      api_key: os.environ/GOOGLE_AI_API_KEY
-    model_info:
-      id: google-gemini-flash
-
-  - model_name: hermes-llm
-    litellm_params:
-      model: groq/llama-3.1-8b-instant                 # Groq — very fast, free tier
-      api_key: os.environ/GROQ_API_KEY
-    model_info:
-      id: groq-llama
-
-  - model_name: hermes-llm
-    litellm_params:
-      model: openrouter/meta-llama/llama-3.1-8b-instruct:free   # OpenRouter free tier
-      api_key: os.environ/OPENROUTER_API_KEY
-    model_info:
-      id: openrouter-llama-free
-
-  - model_name: hermes-llm
-    litellm_params:
-      model: nvidia_nim/meta/llama-3.1-8b-instruct     # Nvidia NIM — free credits
-      api_key: os.environ/NVIDIA_NIM_API_KEY
-    model_info:
-      id: nvidia-nim-llama
-
+- model_name: hermes-llm
+  litellm_params:
+    model: groq/llama-3.3-70b-versatile
+    api_key: os.environ/GROQ_API_KEY
+    order: 1
+  model_info:
+    id: groq-llama-70b
+- model_name: hermes-llm
+  litellm_params:
+    model: openrouter/google/gemma-4-31b-it:free
+    api_key: os.environ/OPENROUTER_API_KEY
+    order: 2
+  model_info:
+    id: openrouter-gemma-31b
+- model_name: hermes-llm
+  litellm_params:
+    model: openrouter/google/gemma-4-26b-a4b-it:free
+    api_key: os.environ/OPENROUTER_API_KEY
+    order: 3
+  model_info:
+    id: openrouter-gemma-26b
+- model_name: hermes-llm
+  litellm_params:
+    model: groq/llama-3.1-8b-instant
+    api_key: os.environ/GROQ_API_KEY
+    order: 4
+  model_info:
+    id: groq-llama-8b
+- model_name: hermes-llm
+  litellm_params:
+    model: gemini/gemini-1.5-flash
+    api_key: os.environ/GOOGLE_AI_API_KEY
+    order: 5
+  model_info:
+    id: gemini-1.5-flash
 router_settings:
-  routing_strategy: least-busy
-  fallbacks:
-    - hermes-llm:
-        - github-gpt4o-mini
-        - google-gemini-flash
-        - groq-llama
-        - openrouter-llama-free
-        - nvidia-nim-llama
+  routing_strategy: simple-shuffle
   retry_policy:
-    RateLimitError: 3
+    RateLimitError: 0
     ServiceUnavailableError: 3
     TimeoutError: 2
-    AuthenticationError: 0    # don't retry bad keys
-  allowed_fails: 2            # before marking a model as failed
-  cooldown_time: 60           # seconds before retrying a failed model
-
+    AuthenticationError: 0
+    NotFoundError: 0
+  allowed_fails: 2
+  cooldown_time: 30
 litellm_settings:
   success_callback: []
   failure_callback: []
-  request_timeout: 30
-  drop_params: true           # silently drop unsupported params per provider
+  request_timeout: 45
+  drop_params: true
   set_verbose: false
-
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  database_url: os.environ/LITELLM_DATABASE_URL    # optional — enables request logs in Postgres
+  database_url: os.environ/LITELLM_DATABASE_URL
   store_model_in_db: false

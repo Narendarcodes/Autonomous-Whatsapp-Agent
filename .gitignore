@@ -128,3 +128,29 @@ yarn-debug.log*
 yarn-error.log*
 package-lock.json
 yarn.lock
+
+# Custom overrides for the project
+.venv/
+backend/.venv/
+graphify-out/
+backend/agent_qr.html
+docker/2026-05-26-211054-this-was-my-eariler-project-the-initial-plan-if-w.txt
+
+# Local/scratch tools and checks
+backend/app/check_hermes_config.py
+backend/app/check_oauth.py
+backend/app/db_check.py
+backend/app/scratch_check_sessions.py
+backend/app/scratch_check_users.py
+backend/app/scratch_check_webhooks.py
+backend/app/scratch_delete_all_sessions.py
+backend/app/scratch_findContacts.py
+backend/app/scratch_redis.py
+backend/app/test_hermes.py
+backend/app/test_litellm.py
+backend/db_check.py
+backend/diag_contacts.py
+backend/generate_qr_html.py
+backend/test_evolution.py
+backend/test_sync.py
+

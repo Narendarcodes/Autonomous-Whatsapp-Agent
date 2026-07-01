@@ -32,7 +32,7 @@ class CalendarService:
         max_results: int = 10,
         days_ahead: int = 7,
     ) -> list[dict]:
-        creds = await load_user_credentials(user)
+        creds = await load_user_credentials(user, db)
         if not creds:
             return []
 
@@ -71,7 +71,7 @@ class CalendarService:
         create_meet_link: bool = False,
         source_chat: str | None = None,
     ) -> dict | None:
-        creds = await load_user_credentials(user)
+        creds = await load_user_credentials(user, db)
         if not creds:
             logger.warning("No Google credentials for user %s", user.id)
             return None
@@ -140,7 +140,7 @@ class CalendarService:
         }
 
     async def delete_event(self, db: AsyncSession, user: User, google_event_id: str) -> bool:
-        creds = await load_user_credentials(user)
+        creds = await load_user_credentials(user, db)
         if not creds:
             return False
 

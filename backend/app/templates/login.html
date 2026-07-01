@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naru Assistant — Authentication</title>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;600&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#e21e26', // Crimson Red
+                        secondary: '#00677f', // Deep Teal
+                    },
+                    fontFamily: {
+                        sans: ['Geist', 'sans-serif'],
+                        display: ['Space Grotesk', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .glow-red {
+            box-shadow: 0 0 40px rgba(226, 30, 38, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-[#fafafa] font-sans min-h-screen flex items-center justify-center relative overflow-hidden">
+    <!-- Glowing background decorative circles -->
+    <div class="absolute -top-40 -left-40 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+    <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-secondary/5 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="w-full max-w-md p-6 relative z-10">
+        <!-- Logo and Header -->
+        <div class="text-center mb-8">
+            <h1 class="font-display text-4xl font-bold tracking-tight text-neutral-800">
+                NARU<span class="text-primary">.</span>
+            </h1>
+            <p class="text-neutral-500 mt-2 font-medium">Conversational Operating System</p>
+        </div>
+
+        <!-- Glassmorphism Login Card -->
+        <div class="glass rounded-3xl p-8 shadow-2xl glow-red">
+            <h2 class="font-display text-2xl font-semibold text-neutral-800 mb-6 text-center">Admin Access</h2>
+            
+            <form action="/login" method="POST" class="space-y-6">
+                <div>
+                    <label for="password" class="block text-sm font-semibold text-neutral-600 mb-2">Security Password</label>
+                    <input type="password" name="password" id="password" required 
+                        placeholder="••••••••" 
+                        class="w-full px-4 py-3 rounded-2xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition bg-white/50 text-neutral-800 placeholder-neutral-300">
+                </div>
+
+                <!-- Error Message (if any) -->
+                <div id="error-box" class="hidden text-sm font-semibold text-primary text-center">
+                    Incorrect password. Please try again.
+                </div>
+
+                <button type="submit" 
+                    class="w-full py-3.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-2xl font-semibold shadow-lg transition active:scale-[0.98] duration-150">
+                    Authenticate Session
+                </button>
+            </form>
+        </div>
+
+        <div class="text-center mt-8 text-xs text-neutral-400">
+            Naru AI Assistant © 2026. Protected by security layer.
+        </div>
+    </div>
+
+    <script>
+        // Check url parameters for error
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('error') === 'true') {
+            document.getElementById('error-box').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>

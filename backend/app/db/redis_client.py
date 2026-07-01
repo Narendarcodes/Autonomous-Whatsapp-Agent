@@ -35,8 +35,13 @@ async def get_redis() -> redis_async.Redis:
 async def close_redis() -> None:
     global _redis
     if _redis is not None:
-        await _redis.aclose()
-        _redis = None
+        try:
+            await _redis.aclose()
+        except RuntimeError as e:
+            if "Event loop is closed" not in str(e):
+                raise
+        finally:
+            _redis = None
 
 
 async def enqueue_message(payload: dict[str, Any]) -> str:
