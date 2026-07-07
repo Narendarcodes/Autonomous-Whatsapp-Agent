@@ -15,16 +15,13 @@ import time
 import webbrowser
 from pathlib import Path
 
+from dotenv import load_dotenv
 import httpx
 
 # Load .env from backend/ directory so we don't need env vars set manually
 _env_file = Path(__file__).parent.parent / "backend" / ".env"
 if _env_file.exists():
-    for line in _env_file.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, val = line.partition("=")
-            os.environ.setdefault(key.strip(), val.strip())
+    load_dotenv(_env_file)
 
 # Evolution API runs on container port 8080, mapped to host port 2785.
 # When running this script on the HOST machine, always use localhost:2785.
