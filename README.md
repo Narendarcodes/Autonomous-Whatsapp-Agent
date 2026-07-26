@@ -10,6 +10,7 @@
 [![Hermes](https://img.shields.io/badge/Hermes-Agent-orange.svg)](https://github.com/NousResearch/hermes-agent)
 [![LiteLLM](https://img.shields.io/badge/LiteLLM-Router-purple.svg)](https://github.com/BerriAI/litellm)
 [![Evolution API](https://img.shields.io/badge/Evolution-API-2785-teal.svg)](https://github.com/EvolutionAPI/evolution-api)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
