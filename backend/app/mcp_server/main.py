@@ -175,6 +175,17 @@ async def search_contacts(query: str) -> str:
     instance = settings.OPENWA_SESSION_ID
     
     try:
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import select
+            from app.models.models import User, ChatACL
+            
+            # Fetch whitelisted phones and chats for sandboxing
+            users_res = await db.execute(select(User.wa_phone).where(User.has_permission == True))
+            allowed_phones = {p.replace("+", "").strip() for p in users_res.scalars().all() if p}
+            
+            acl_res = await db.execute(select(ChatACL.chat_id).where(ChatACL.mode == "allow_all"))
+            allowed_chats = {c.replace("+", "").strip() for c in acl_res.scalars().all() if c}
+
         async with httpx.AsyncClient(base_url=base_url, headers=headers, timeout=30) as client:
             r = await client.post(f"/chat/findContacts/{instance}", json={})
             if r.status_code != 200:
@@ -187,6 +198,12 @@ async def search_contacts(query: str) -> str:
                 name = c.get("name") or ""
                 pushName = c.get("pushName") or c.get("pushname") or ""
                 jid = c.get("remoteJid") or c.get("id") or ""
+                phone_clean = jid.split("@")[0].split(":")[0].lstrip("+")
+                
+                # Sandboxing assertion: Only include if phone/JID is explicitly whitelisted
+                if not (phone_clean in allowed_phones or jid in allowed_chats or phone_clean in allowed_chats):
+                    continue
+                    
                 if (query_lower in name.lower() or 
                     query_lower in pushName.lower() or 
                     query_lower in jid.lower()):

@@ -231,6 +231,10 @@ class WhatsAppService:
             from app.services.agent_instance_service import agent_instance_service
             return await agent_instance_service.send_via_agent(to, message)
 
+        import hashlib
+        msg_hash = hashlib.md5(f"{number}:{message.strip()}".encode()).hexdigest()
+        await cache_set(f"sent_text:{msg_hash}", "1", ttl_seconds=60)
+
         url = f"/message/sendText/{INSTANCE_NAME}"
         payload = {"number": number, "text": message}
 
@@ -240,7 +244,6 @@ class WhatsAppService:
                 resp = await client.post(url, json=payload)
                 if resp.status_code in (200, 201):
                     logger.info("Sent message to %s", number)
-                    # Cache the sent message ID to avoid infinite self-reply loops
                     try:
                         data = resp.json()
                         sent_msg_id = data.get("key", {}).get("id")

@@ -180,6 +180,10 @@ class AgentInstanceService:
             logger.warning("send_via_agent called with empty target")
             return False
 
+        import hashlib
+        msg_hash = hashlib.md5(f"{number}:{message.strip()}".encode()).hexdigest()
+        await cache_set(f"sent_text:{msg_hash}", "1", ttl_seconds=60)
+
         client = await self._get_client()
         url = f"/message/sendText/{AGENT_INSTANCE_NAME}"
         payload = {"number": number, "text": message}
@@ -187,6 +191,13 @@ class AgentInstanceService:
             resp = await client.post(url, json=payload)
             if resp.status_code in (200, 201):
                 logger.info("Sent agent message to %s via %s", number, AGENT_INSTANCE_NAME)
+                try:
+                    data = resp.json()
+                    sent_msg_id = data.get("key", {}).get("id")
+                    if sent_msg_id:
+                        await cache_set(f"sent_message:{sent_msg_id}", "1", ttl_seconds=3600)
+                except Exception as e:
+                    logger.error("Failed to parse/cache agent sent message ID: %s", e)
                 return True
             logger.warning("send_via_agent failed %s: %s", resp.status_code, resp.text[:200])
         except httpx.HTTPError as exc:

@@ -283,6 +283,7 @@ async def _chat_worker(chat_id: str, queue: asyncio.Queue):
                     # A. Monitored Chats Check
                     chat_clean = parsed["chat_id"].split("@")[0].split(":")[0].lstrip("+")
                     chat_monitored = False
+                    chat_config = None
                     if is_owner and not parsed["is_group"]:
                         chat_monitored = True
                     else:
@@ -464,8 +465,11 @@ async def evolution_webhook(request: Request) -> dict[str, str]:
             return {"status": "ignored_non_owner_agent_chat", "chat_id": parsed["chat_id"]}
 
     # Check if this message was sent by our API (to prevent infinite loops)
-    if await cache_get(f"sent_message:{parsed['message_id']}"):
-        logger.info(f"Ignoring message {parsed['message_id']} sent by our own bot API")
+    import hashlib
+    target_jid = whatsapp_service.to_chat_id(parsed["chat_id"])
+    text_hash = hashlib.md5(f"{target_jid}:{parsed['message_text'].strip()}".encode()).hexdigest()
+    if await cache_get(f"sent_message:{parsed['message_id']}") or await cache_get(f"sent_text:{text_hash}"):
+        logger.info(f"Ignoring message {parsed['message_id']} sent by our own bot API (hash: {text_hash})")
         return {"status": "ignored_self_api_send", "message_id": parsed["message_id"]}
 
     # Rate limit check
