@@ -3,7 +3,9 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>Naru AI Assistant - Dashboard</title>
+    <title>OmniWA | Autonomous 24/7 AI Assistant on WhatsApp</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg?v=5"/>
+    <meta name="description" content="OmniWA is the autonomous AI assistant for WhatsApp featuring voice transcription, image vision, and Google Calendar scheduling."/>
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Geist:wght@100;300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
     <!-- Icons -->
@@ -16,26 +18,26 @@
             theme: {
                 extend: {
                     "colors": {
-                        "primary-container": "#e21e26",
-                        "surface": "#fff8f7",
-                        "background": "#fff8f7",
-                        "primary": "#b90015",
-                        "secondary": "#00677f",
-                        "surface-container-low": "#fff0ef",
-                        "surface-bright": "#fff8f7",
-                        "outline-variant": "#e7bdb8",
-                        "on-surface": "#291715",
-                        "on-surface-variant": "#5d3f3c",
+                        "primary-container": "#00a884",
+                        "surface": "#ffffff",
+                        "background": "#f0f2f5",
+                        "primary": "#00a884",
+                        "secondary": "#075e54",
+                        "surface-container-low": "#f7f9fa",
+                        "surface-bright": "#ffffff",
+                        "outline-variant": "#d1d7db",
+                        "on-surface": "#111b21",
+                        "on-surface-variant": "#5d6e77",
                         "surface-container-lowest": "#ffffff",
-                        "surface-container-highest": "#fddbd7",
-                        "surface-container": "#ffe9e6",
-                        "surface-container-high": "#ffe2de",
-                        "outline": "#926f6b",
+                        "surface-container-highest": "#d1d7db",
+                        "surface-container": "#e9edef",
+                        "surface-container-high": "#dfe5e7",
+                        "outline": "#8696a0",
                         "error": "#ba1a1a",
-                        "secondary-container": "#97e2fd",
-                        "on-secondary-container": "#00667e",
-                        "inverse-surface": "#402b29",
-                        "inverse-on-surface": "#ffedeb"
+                        "secondary-container": "#e7fceb",
+                        "on-secondary-container": "#075e54",
+                        "inverse-surface": "#111b21",
+                        "inverse-on-surface": "#e9edef"
                     },
                     "borderRadius": {
                         "DEFAULT": "0.25rem",
@@ -85,8 +87,8 @@
                             "100%": { backgroundPosition: "200px 0" }
                         },
                         "pulseSoft": {
-                            "0%, 100%": { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(226, 30, 38, 0)" },
-                            "50%": { transform: "scale(1.02)", boxShadow: "0 0 20px 0 rgba(226, 30, 38, 0.15)" }
+                            "0%, 100%": { transform: "scale(1)", boxShadow: "0 0 0 0 rgba(0, 168, 132, 0)" },
+                            "50%": { transform: "scale(1.02)", boxShadow: "0 0 20px 0 rgba(0, 168, 132, 0.2)" }
                         }
                     }
                 }
@@ -94,31 +96,73 @@
         }
     </script>
     <style>
+        :root {
+            color-scheme: light;
+        }
+        html {
+            scroll-behavior: smooth;
+        }
         body {
-            background-color: #fff8f7;
+            background:
+                radial-gradient(circle at top left, rgba(0, 168, 132, 0.12), transparent 28%),
+                radial-gradient(circle at 85% 8%, rgba(7, 94, 84, 0.08), transparent 22%),
+                #f0f2f5;
             font-family: 'Geist', sans-serif;
-            color: #291715;
+            color: #111b21;
             overflow-x: hidden;
+            text-rendering: geometricPrecision;
         }
         .glass-panel {
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.92);
             backdrop-filter: blur(12px);
-            border: 1px solid #E5E7EB;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(209, 215, 219, 0.8);
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .glass-panel:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+            box-shadow: 0 8px 24px rgba(0, 168, 132, 0.08);
+        }
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
+        }
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        a:focus-visible {
+            outline: 3px solid rgba(0, 168, 132, 0.4);
+            outline-offset: 2px;
+        }
+        button:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .state-message {
+            border: 1px solid rgba(134, 150, 160, 0.2);
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 16px;
+            padding: 1rem;
+        }
+        .state-message[data-tone="danger"] {
+            border-color: rgba(186, 26, 26, 0.18);
+            background: rgba(255, 245, 245, 0.92);
+        }
+        .state-message[data-tone="accent"] {
+            border-color: rgba(0, 168, 132, 0.2);
+            background: rgba(231, 252, 235, 0.9);
         }
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
             vertical-align: middle;
         }
         .voice-card-active, .mode-card-active {
-            border-color: #e21e26;
-            background-color: #fff0ef;
-            box-shadow: 0 0 15px rgba(226, 30, 38, 0.1);
+            border-color: #00a884;
+            background-color: #e7fceb;
+            box-shadow: 0 0 15px rgba(0, 168, 132, 0.15);
         }
         input[type="time"]::-webkit-calendar-picker-indicator {
             filter: grayscale(1) contrast(0.5);
@@ -137,9 +181,9 @@
             position: relative;
             z-index: 9999 !important;
             /* Clean glowing ring - NO box-shadow overlay so content stays readable */
-            outline: 3px solid #e21e26 !important;
+            outline: 3px solid #00a884 !important;
             outline-offset: 4px;
-            box-shadow: 0 0 0 7px rgba(226, 30, 38, 0.15), 0 0 24px rgba(226, 30, 38, 0.35) !important;
+            box-shadow: 0 0 0 7px rgba(0, 168, 132, 0.15), 0 0 24px rgba(0, 168, 132, 0.35) !important;
             border-radius: 12px;
         }
         .stagger-1 { animation-delay: 0.05s; }
@@ -159,7 +203,7 @@
             overflow-y: auto;
             background: rgba(255, 255, 255, 0.98);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(231, 189, 184, 0.6);
+            border: 1px solid rgba(0, 168, 132, 0.3);
             border-radius: 12px;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
             padding: 6px;
@@ -175,7 +219,7 @@
             overflow-y: auto;
             background: rgba(255, 255, 255, 0.98);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(118, 185, 142, 0.6);
+            border: 1px solid rgba(0, 168, 132, 0.4);
             border-radius: 12px;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
             padding: 6px;
@@ -216,7 +260,7 @@
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .suggestion-item:hover {
-            background-color: #fff0ef;
+            background-color: #e7fceb;
             transform: translateX(4px);
         }
         
@@ -237,7 +281,7 @@
             max-width: 450px;
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(12px);
-            border: 1.5px solid rgba(231, 189, 184, 0.5);
+            border: 1.5px solid rgba(0, 168, 132, 0.3);
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
             border-radius: 1rem;
             padding: 1rem;
@@ -253,43 +297,69 @@
             opacity: 1;
         }
         .toast-notification.success {
-            border-left: 4px solid #00677f;
+            border-left: 4px solid #00a884;
         }
         .toast-notification.error {
-            border-left: 4px solid #b90015;
+            border-left: 4px solid #ba1a1a;
+        }
+        @media (max-width: 767px) {
+            #toast-container {
+                left: 1rem;
+                right: 1rem;
+                top: auto;
+                bottom: 5rem;
+            }
+            .toast-notification {
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+            }
+            #tutorial-card {
+                width: calc(100vw - 1.5rem);
+                max-width: none;
+            }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                scroll-behavior: auto !important;
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
 <body class="min-h-screen text-on-surface">
+<a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:z-[10000] focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:rounded-full focus:bg-white focus:text-on-surface focus:shadow-lg">Skip to main content</a>
 
 <!-- Onboarding Walkthrough Tutorial Overlay -->
 <!-- Single semi-transparent overlay - no blur so the spotlighted element stays readable -->
 <div id="tutorial-overlay" class="fixed inset-0 z-[9990] hidden" style="background: rgba(0,0,0,0.45); transition: opacity 0.3s;"></div>
 
 <!-- Tutorial card: always fixed at bottom-center, never jumps around -->
-<div id="tutorial-card" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl z-[9999] hidden w-full max-w-md transition-all duration-300" style="border: 1.5px solid rgba(226,30,38,0.2);">
-    <!-- Red top accent bar -->
-    <div class="h-1 w-full rounded-t-2xl" style="background: linear-gradient(90deg, #e21e26, #00677f);"></div>
+<div id="tutorial-card" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl z-[9999] hidden w-full max-w-md transition-all duration-300" style="border: 1.5px solid rgba(0,168,132,0.25);">
+    <!-- WhatsApp green top accent bar -->
+    <div class="h-1 w-full rounded-t-2xl" style="background: linear-gradient(90deg, #00a884, #075e54);"></div>
     <div class="p-5">
         <!-- Header row: step counter + title + close -->
         <div class="flex justify-between items-center mb-1">
             <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/50" id="tutorial-step-counter">Step 1 of 10</span>
-            <button onclick="skipTutorial()" class="p-1 rounded-lg hover:bg-red-50 transition-colors group" title="Skip tour">
+            <button onclick="skipTutorial()" class="p-1 rounded-lg hover:bg-emerald-50 transition-colors group" title="Skip tour">
                 <span class="material-symbols-outlined text-base text-on-surface-variant/40 group-hover:text-primary">close</span>
             </button>
         </div>
-        <h4 class="font-bold text-base mb-2" style="color: #e21e26;" id="tutorial-title">Step Title</h4>
+        <h4 class="font-bold text-base mb-2" style="color: #00a884;" id="tutorial-title">Step Title</h4>
         <!-- Arrow pointing up to highlight target above card -->
         <div class="flex items-start gap-3 mb-4">
-            <span class="material-symbols-outlined text-2xl mt-0.5 flex-shrink-0" style="color: #e21e26; font-variation-settings: 'FILL' 1;">arrow_upward</span>
+            <span class="material-symbols-outlined text-2xl mt-0.5 flex-shrink-0" style="color: #00a884; font-variation-settings: 'FILL' 1;">arrow_upward</span>
             <p class="font-body-md text-on-surface-variant text-sm leading-relaxed" id="tutorial-text">Explanation copy goes here.</p>
         </div>
         <!-- Progress dots + nav buttons -->
         <div class="flex justify-between items-center">
             <div class="flex gap-1.5" id="tutorial-dots"></div>
             <div class="flex gap-2">
-                <button id="tutorial-prev-btn" onclick="prevTutorialStep()" class="px-3 py-1.5 border rounded-lg font-semibold text-xs transition-all" style="border-color: #00677f; color: #00677f;">Back</button>
-                <button id="tutorial-next-btn" onclick="nextTutorialStep()" class="px-4 py-1.5 text-white rounded-lg font-semibold text-xs transition-all hover:brightness-110 active:scale-95" style="background: #e21e26;">Next</button>
+                <button id="tutorial-prev-btn" onclick="prevTutorialStep()" class="px-3 py-1.5 border rounded-lg font-semibold text-xs transition-all" style="border-color: #075e54; color: #075e54;">Back</button>
+                <button id="tutorial-next-btn" onclick="nextTutorialStep()" class="px-4 py-1.5 text-white rounded-lg font-semibold text-xs transition-all hover:brightness-110 active:scale-95" style="background: #00a884;">Next</button>
             </div>
         </div>
     </div>
@@ -299,8 +369,9 @@
 <header class="w-full h-16 fixed top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 flex justify-between items-center px-margin-mobile md:px-margin-desktop md:pl-72">
     <div class="flex items-center gap-4">
         <!-- Logo / Name -->
-        <h1 class="font-h3 text-h3 font-bold text-primary tracking-tight flex items-center gap-2 cursor-pointer" onclick="window.location.reload()">
-            <span class="material-symbols-outlined font-bold">face</span> Naru
+        <h1 class="font-h3 text-h3 font-bold text-primary tracking-tight flex items-center gap-2.5 cursor-pointer" onclick="window.location.reload()">
+            <img src="/logo.svg?v=5" alt="OmniWA Logo" class="w-8 h-8 object-contain" />
+            <span>omniWA</span>
         </h1>
         <div class="h-6 w-[1px] bg-outline-variant/30 hidden md:block"></div>
         <span class="hidden md:inline font-label-sm text-secondary bg-secondary/5 border border-secondary/25 px-2 py-0.5 rounded-full text-[11px] font-bold">V.2.00</span>
@@ -316,15 +387,15 @@
 <!-- Desktop Sidebar Navigation -->
 <aside id="tutorial-step-sidebar" class="hidden md:flex h-screen w-64 fixed left-0 top-0 bg-white/95 backdrop-blur-xl border-r border-outline-variant/30 shadow-lg shadow-black/5 flex-col p-4 space-y-4 z-40">
     <div class="flex items-center gap-3 px-2 py-4 mb-4">
-        <div class="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center text-white">
-            <span class="material-symbols-outlined text-2xl font-bold" style="font-variation-settings: 'FILL' 1;">smart_toy</span>
+        <div class="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center p-1.5 shadow-sm">
+            <img src="/logo.svg?v=5" alt="OmniWA Logo" class="w-full h-full object-contain drop-shadow-sm" />
         </div>
         <div>
-            <h2 class="font-h2 text-label-md font-bold text-primary leading-tight">Naru</h2>
+            <h2 class="font-h2 text-label-md font-bold text-primary leading-tight">omniWA</h2>
             <p class="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">AI Assistant</p>
         </div>
     </div>
-    <nav class="flex-grow space-y-1">
+    <nav class="flex-grow space-y-1" role="tablist" aria-label="Dashboard sections">
         <button id="side-btn-whatsapp" onclick="showTab('whatsapp')" class="flex items-center gap-3 w-full px-4 py-3 text-secondary hover:bg-surface-container-high/50 hover:text-primary transition-all duration-300 rounded-lg text-left font-label-md text-label-md select-none outline-none">
             <span class="material-symbols-outlined">link</span>
             <span>WhatsApp Connection</span>
@@ -363,7 +434,7 @@
 </aside>
 
 <!-- Main Canvas -->
-<main class="md:pl-64 pt-16 pb-20 md:pb-0 min-h-screen flex flex-col">
+<main id="main-content" class="md:pl-64 pt-16 pb-20 md:pb-0 min-h-screen flex flex-col" tabindex="-1">
     <div class="max-w-container-max w-full mx-auto px-margin-mobile md:px-margin-desktop py-gutter flex-grow space-y-gutter">
 
         <!-- ==================== TAB: WHATSAPP CONNECTION ==================== -->
@@ -376,7 +447,7 @@
                         <span class="material-symbols-outlined text-4xl" style="font-variation-settings: 'FILL' 1;">face</span>
                     </div>
                     <div class="space-y-2">
-                        <h2 class="font-h2 text-h2 text-on-surface">Welcome to Naru AI Assistant</h2>
+                        <h2 class="font-h2 text-h2 text-on-surface">Welcome to omniWA AI Assistant</h2>
                         <p class="font-body-lg text-on-surface-variant leading-relaxed max-w-lg mx-auto">
                             Establish a secure handshake between your WhatsApp account and our personal voice-enabled agent. Set up in seconds.
                         </p>
@@ -392,7 +463,7 @@
             <div id="wa-qr-slide" class="hidden space-y-gutter max-w-2xl mx-auto mt-8">
                 <div class="glass-panel p-8 rounded-xl text-center flex flex-col items-center gap-6 relative">
                     <h3 class="font-h3 text-h3 text-on-surface">Scan WhatsApp QR Code</h3>
-                    <p class="font-body-md text-on-surface-variant max-w-sm">Open WhatsApp on your phone, go to Linked Devices, and scan this QR code to sync Naru.</p>
+                    <p class="font-body-md text-on-surface-variant max-w-sm">Open WhatsApp on your phone, go to Linked Devices, and scan this QR code to sync omniWA.</p>
                     
                     <!-- Scanner Frame -->
                     <div class="relative p-4 bg-white border border-outline-variant/30 rounded-xl shadow-inner group w-64 h-64 flex items-center justify-center overflow-hidden">
@@ -496,7 +567,7 @@
                         </h3>
                         <div class="space-y-2">
                             <label class="font-label-md text-label-md text-on-surface-variant" for="input-bot-name">Display Name (Agent)</label>
-                            <input class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-secondary focus:ring-4 focus:ring-secondary/10 outline-none transition-all font-body-md bg-white" id="input-bot-name" placeholder="e.g. Naru Agent" type="text" value="Naru"/>
+                            <input class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-secondary focus:ring-4 focus:ring-secondary/10 outline-none transition-all font-body-md bg-white" id="input-bot-name" placeholder="e.g. OmniWA Agent" type="text" value="OmniWA"/>
                             <p class="text-[12px] text-on-surface-variant/60">This name represents the agent's display signature.</p>
                         </div>
                         <div class="space-y-2">
@@ -667,7 +738,7 @@
                                 <div class="w-8 h-8 rounded-full bg-white flex items-center justify-center text-primary animate-pulse-soft">
                                     <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">face</span>
                                 </div>
-                                <span id="preview-name" class="font-label-md font-bold">Naru Agent</span>
+                                <span id="preview-name" class="font-label-md font-bold">OmniWA Agent</span>
                             </div>
                             <div class="h-2 w-3/4 bg-white/25 rounded-full overflow-hidden relative">
                                 <div class="absolute inset-0 shimmer-bg"></div>
@@ -713,7 +784,7 @@
             <div class="mb-6">
                 <h2 class="font-h1 text-h2 text-on-surface mb-2">Connectors & Integrations</h2>
                 <p class="font-body-md text-on-surface-variant max-w-2xl">
-                    Configure and monitor connections linking the Naru AI Agent brain to external services and built-in system tools.
+                    Configure and monitor connections linking the OmniWA brain to external services and built-in system tools.
                 </p>
             </div>
 
@@ -729,7 +800,7 @@
                     <span>System Capabilities & Core Tools</span>
                 </h3>
                 <p class="font-body-md text-on-surface-variant max-w-2xl text-[11px] leading-relaxed">
-                    Built-in features of the Naru Agent executing inside local sandboxed environments.
+                    Built-in features of the OmniWA agent executing inside local sandboxed environments.
                 </p>
             </div>
 
@@ -1383,7 +1454,7 @@
                 <div id="logs-console" class="p-6 h-64 overflow-y-auto font-mono text-[12px] leading-relaxed space-y-2 select-text text-inverse-on-surface/80">
                     <div class="flex gap-4">
                         <span class="text-secondary">[SYSTEM_INIT]</span>
-                        <span>Naru dashboard controller loaded. Handshake initialized.</span>
+                        <span>OmniWA dashboard controller loaded. Handshake initialized.</span>
                     </div>
                 </div>
             </section>
@@ -1393,7 +1464,7 @@
 </main>
 
 <!-- Mobile Bottom Navigation -->
-<nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-lg border-t border-outline-variant/30 shadow-lg flex justify-around items-center h-16 px-4">
+<nav class="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/90 backdrop-blur-lg border-t border-outline-variant/30 shadow-lg flex justify-around items-center h-16 px-4" role="tablist" aria-label="Dashboard sections mobile">
     <button onclick="showTab('whatsapp')" id="mobile-btn-whatsapp" class="flex flex-col items-center justify-center flex-1 py-1 text-secondary hover:text-primary transition-all">
         <span class="material-symbols-outlined text-xl">link</span>
         <span class="text-[10px] font-medium mt-0.5">WhatsApp</span>
@@ -1425,6 +1496,32 @@
     let selectedBotMode = 'dual_number';
     let loadedBotPhone = ''; // Track the current configured agent phone to detect changes
 
+    function setPanelState(target, state, message, actionHtml = '') {
+        if (!target) return;
+        const tone = state === 'error' ? 'danger' : (state === 'empty' ? 'accent' : 'neutral');
+        const icon = state === 'error' ? 'error' : (state === 'empty' ? 'inbox' : 'hourglass_empty');
+        target.innerHTML = `
+            <div class="state-message text-center" data-tone="${tone}" aria-live="${state === 'error' ? 'assertive' : 'polite'}">
+                <span class="material-symbols-outlined text-3xl ${state === 'error' ? 'text-primary' : 'text-secondary'} mb-2" style="font-variation-settings:'FILL' 1">${icon}</span>
+                <p class="font-semibold text-on-surface">${message}</p>
+                ${actionHtml ? `<div class="mt-4">${actionHtml}</div>` : ''}
+            </div>
+        `;
+    }
+
+    function setLoadingRows(target, columns, rows = 3) {
+        if (!target) return;
+        target.innerHTML = Array.from({ length: rows }).map(() => `
+            <tr class="animate-pulse">
+                ${Array.from({ length: columns }).map(() => `
+                    <td class="px-4 py-4">
+                        <div class="h-3 rounded-full bg-surface-container-high"></div>
+                    </td>
+                `).join('')}
+            </tr>
+        `).join('');
+    }
+
     function showTab(tabName) {
         if (!allTabs.includes(tabName)) return;
         currentTab = tabName;
@@ -1432,35 +1529,49 @@
         // Hide all tabs
         allTabs.forEach(t => {
             const el = document.getElementById('tab-' + t);
-            if (el) el.classList.add('hidden');
+            if (el) {
+                el.classList.add('hidden');
+                el.setAttribute('aria-hidden', 'true');
+            }
             
             const btn = document.getElementById('side-btn-' + t);
             if (btn) {
                 btn.classList.remove('bg-primary-container', 'text-on-primary-container', 'font-semibold');
                 btn.classList.add('text-secondary', 'hover:bg-surface-container-high/50', 'hover:text-primary');
+                btn.setAttribute('aria-selected', 'false');
+                btn.setAttribute('tabindex', '-1');
             }
 
             const mobileBtn = document.getElementById('mobile-btn-' + t);
             if (mobileBtn) {
                 mobileBtn.classList.remove('text-primary', 'font-semibold');
                 mobileBtn.classList.add('text-secondary');
+                mobileBtn.setAttribute('aria-selected', 'false');
+                mobileBtn.setAttribute('tabindex', '-1');
             }
         });
         
         // Show active tab
         const activeEl = document.getElementById('tab-' + tabName);
-        if (activeEl) activeEl.classList.remove('hidden');
+        if (activeEl) {
+            activeEl.classList.remove('hidden');
+            activeEl.setAttribute('aria-hidden', 'false');
+        }
         
         const activeBtn = document.getElementById('side-btn-' + tabName);
         if (activeBtn) {
             activeBtn.classList.remove('text-secondary', 'hover:bg-surface-container-high/50', 'hover:text-primary');
             activeBtn.classList.add('bg-primary-container', 'text-on-primary-container', 'font-semibold');
+            activeBtn.setAttribute('aria-selected', 'true');
+            activeBtn.setAttribute('tabindex', '0');
         }
 
         const activeMobileBtn = document.getElementById('mobile-btn-' + tabName);
         if (activeMobileBtn) {
             activeMobileBtn.classList.remove('text-secondary');
             activeMobileBtn.classList.add('text-primary', 'font-semibold');
+            activeMobileBtn.setAttribute('aria-selected', 'true');
+            activeMobileBtn.setAttribute('tabindex', '0');
         }
 
         if (tabName === 'resources') {
@@ -1573,6 +1684,17 @@
                 }
             }
         } catch (e) {
+            const holder = document.getElementById('qr-holder');
+            const qrSlide = document.getElementById('wa-qr-slide');
+            if (holder && qrSlide && !qrSlide.classList.contains('hidden')) {
+                holder.innerHTML = `
+                    <div class="state-message" data-tone="danger">
+                        <p class="font-semibold text-on-surface">Handshake status is temporarily unavailable.</p>
+                        <p class="text-sm text-on-surface-variant mt-1">Retry to check the connection again.</p>
+                        <button type="button" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold" onclick="reconnectWhatsapp()">Retry</button>
+                    </div>
+                `;
+            }
             console.error('Handshake verification failed:', e);
         }
     }
@@ -1583,9 +1705,11 @@
             if (resp.ok) {
                 startQRTimer();
                 await refreshQR();
+            } else {
+                showToast('Failed to generate a new handshake QR.', 'error');
             }
         } catch (e) {
-            console.error('Error generating instance QR:', e);
+            showToast('Error generating handshake QR: ' + e.message, 'error');
         }
     }
 
@@ -1607,15 +1731,15 @@
             }
             
             modal.innerHTML = `
-                <div class="qr-card" style="background: white; border-radius: 20px; padding: 32px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1); margin: 16px;">
+                <div class="qr-card" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message" style="background: white; border-radius: 20px; padding: 32px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25); animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1); margin: 16px;">
                     <div class="flex items-center gap-2 mb-4 justify-center">
                         <span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings:'FILL' 1">warning</span>
-                        <h3 class="font-bold text-lg text-on-surface">${title}</h3>
+                        <h3 id="confirm-title" class="font-bold text-lg text-on-surface">${title}</h3>
                     </div>
-                    <p class="text-sm text-on-surface-variant text-center leading-relaxed mb-6">${message}</p>
+                    <p id="confirm-message" class="text-sm text-on-surface-variant text-center leading-relaxed mb-6">${message}</p>
                     <div class="flex items-center justify-center gap-4">
-                        <button id="confirm-cancel-btn" class="px-5 py-2.5 text-xs font-semibold rounded-lg text-on-surface hover:bg-surface-container transition-colors border border-outline-variant">${cancelText}</button>
-                        <button id="confirm-ok-btn" class="px-5 py-2.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors">${confirmText}</button>
+                        <button type="button" id="confirm-cancel-btn" class="px-5 py-2.5 text-xs font-semibold rounded-lg text-on-surface hover:bg-surface-container transition-colors border border-outline-variant">${cancelText}</button>
+                        <button type="button" id="confirm-ok-btn" class="px-5 py-2.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors">${confirmText}</button>
                     </div>
                 </div>
             `;
@@ -1627,18 +1751,26 @@
             
             const closeConfirm = (result) => {
                 modal.style.display = 'none';
+                document.removeEventListener('keydown', onEscape);
                 resolve(result);
             };
-            
+            const onEscape = (event) => {
+                if (event.key === 'Escape') {
+                    closeConfirm(false);
+                }
+            };
+
             cancelBtn.onclick = () => closeConfirm(false);
             okBtn.onclick = () => closeConfirm(true);
+            document.addEventListener('keydown', onEscape);
+            okBtn.focus();
         });
     };
 
     async function disconnectWhatsapp() {
         const confirmed = await window.showConfirmModal(
             "Disconnect WhatsApp",
-            "Are you sure you want to disconnect Naru from this WhatsApp account?"
+            "Are you sure you want to disconnect OmniWA from this WhatsApp account?"
         );
         if (!confirmed) return;
         try {
@@ -1647,10 +1779,10 @@
                 goBackToSplash();
                 await refreshQR();
             } else {
-                alert('Session disconnection failed.');
+                showToast('Session disconnection failed.', 'error');
             }
         } catch (e) {
-            alert('Handshake disconnection error: ' + e.message);
+            showToast('Handshake disconnection error: ' + e.message, 'error');
         }
     }
 
@@ -2084,8 +2216,8 @@
             const data = await resp.json();
             
             // Set fields
-            document.getElementById('input-bot-name').value = data.bot_name || 'Naru';
-            document.getElementById('preview-name').innerText = data.bot_name || 'Naru';
+            document.getElementById('input-bot-name').value = data.bot_name || 'OmniWA';
+            document.getElementById('preview-name').innerText = data.bot_name || 'OmniWA';
             document.getElementById('input-owner-name').value = data.owner_name || 'You (Owner)';
             document.getElementById('input-quiet-start').value = data.quiet_hours_start || '22:00';
             document.getElementById('input-quiet-end').value = data.quiet_hours_end || '07:00';
@@ -2130,7 +2262,7 @@
             document.getElementById('stt-provider-badge').innerText = data.stt_provider || 'groq';
             document.getElementById('tts-provider-badge').innerText = data.tts_provider || 'edge';
         } catch (e) {
-            console.error('Error loading Naru preferences:', e);
+            console.error('Error loading OmniWA preferences:', e);
         }
     }
 
@@ -2353,8 +2485,35 @@
     }
 
     async function loadACLUsers() {
+        const tbody = document.getElementById('acl-table-body');
+        const mobileList = document.getElementById('acl-mobile-list');
+        const badge = document.getElementById('acl-count-badge');
+        if (badge) badge.innerText = 'Loading...';
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="px-6 py-8">
+                        <div class="state-message animate-pulse" aria-live="polite">
+                            <div class="h-3 w-40 bg-surface-container-high rounded-full mb-3"></div>
+                            <div class="h-3 w-72 bg-surface-container-high rounded-full"></div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+        if (mobileList) {
+            mobileList.innerHTML = `
+                <div class="state-message animate-pulse">
+                    <div class="h-3 w-44 bg-surface-container-high rounded-full mb-3"></div>
+                    <div class="h-3 w-56 bg-surface-container-high rounded-full"></div>
+                </div>
+            `;
+        }
         try {
             const resp = await fetch('/permissions');
+            if (!resp.ok) {
+                throw new Error(`Request failed (${resp.status})`);
+            }
             const data = await resp.json();
             usersList = data.users || [];
             currentBotMode = data.bot_mode || 'self_chat';
@@ -2362,6 +2521,35 @@
             filterUsersTable();
         } catch (e) {
             console.error('Failed to load whitelisted ACL contacts:', e);
+            usersList = [];
+            if (badge) badge.innerText = 'Unavailable';
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-6 py-8">
+                            <div class="state-message" data-tone="danger">
+                                <div class="flex items-start gap-3">
+                                    <span class="material-symbols-outlined text-primary mt-0.5" style="font-variation-settings:'FILL' 1">error</span>
+                                    <div class="flex-1">
+                                        <p class="font-semibold text-on-surface">Could not load access control data.</p>
+                                        <p class="text-sm text-on-surface-variant mt-1">Check the connection and try again.</p>
+                                        <button type="button" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold" onclick="loadACLUsers()">Retry</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
+            if (mobileList) {
+                mobileList.innerHTML = `
+                    <div class="state-message" data-tone="danger">
+                        <p class="font-semibold text-on-surface">Access control is unavailable right now.</p>
+                        <p class="text-sm text-on-surface-variant mt-1">Try reloading the panel.</p>
+                        <button type="button" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold" onclick="loadACLUsers()">Retry</button>
+                    </div>
+                `;
+            }
         }
     }
 
@@ -2379,8 +2567,12 @@
         document.getElementById('acl-count-badge').innerText = `${filtered.length} Contacts`;
 
         if (filtered.length === 0) {
-            const noResults = `<div class="py-10 text-center text-on-surface-variant font-medium text-xs">No whitelisted contacts matched the search</div>`;
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center">${noResults}</td></tr>`;
+            const noResults = `
+                <div class="state-message text-left" data-tone="accent">
+                    <p class="font-semibold text-on-surface">No contacts match this search.</p>
+                    <p class="text-sm text-on-surface-variant mt-1">Try a phone number fragment, display name, or status.</p>
+                </div>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-8">${noResults}</td></tr>`;
             mobileList.innerHTML = noResults;
             return;
         }
@@ -2704,7 +2896,7 @@
             elementId: 'tutorial-step-sidebar',
             tab: 'whatsapp',
             title: 'Control Center Navigation',
-            text: 'Welcome to Naru! This sidebar allows you to easily switch between connection setup, agent customization, integrations, whitelist access, and physical metrics monitoring.'
+            text: 'Welcome to OmniWA. This sidebar lets you switch between connection setup, agent customization, integrations, whitelist access, and system monitoring.'
         },
         {
             elementId: 'tab-whatsapp',
@@ -2734,7 +2926,7 @@
             elementId: 'tutorial-step-google',
             tab: 'connectors',
             title: 'Connectors Integrations',
-            text: 'Sync Naru with external platforms. Link Google Calendar to fetch schedules and execute automated calendar writes.'
+            text: 'Sync OmniWA with external platforms. Link Google Calendar to fetch schedules and execute automated calendar writes.'
         },
         {
             elementId: 'tutorial-step-addcontact',
@@ -2963,7 +3155,7 @@
     // Watch bot personality name updates to synchronize UI text dynamically
     const botNameInput = document.getElementById('input-bot-name');
     botNameInput.addEventListener('input', (e) => {
-        document.getElementById('preview-name').innerText = e.target.value.trim() || 'Naru Agent';
+        document.getElementById('preview-name').innerText = e.target.value.trim() || 'OmniWA Agent';
     });
 
     // Custom Toast Notification System
@@ -2972,11 +3164,17 @@
         if (!container) {
             container = document.createElement('div');
             container.id = 'toast-container';
+            container.setAttribute('role', 'status');
+            container.setAttribute('aria-live', 'polite');
+            container.setAttribute('aria-atomic', 'true');
             document.body.appendChild(container);
         }
         
         const toast = document.createElement('div');
         toast.className = `toast-notification ${type}`;
+        toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+        toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+        toast.setAttribute('aria-atomic', 'true');
         
         const icon = type === 'success' ? 'check_circle' : 'error';
         const iconColor = type === 'success' ? 'text-secondary' : 'text-primary';
@@ -2988,7 +3186,7 @@
                 <p class="font-bold text-sm text-on-surface leading-tight">${title}</p>
                 <p class="text-[12px] text-on-surface-variant mt-1 leading-relaxed">${message}</p>
             </div>
-            <button class="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0" onclick="this.parentElement.remove()">
+            <button type="button" class="text-on-surface-variant/40 hover:text-on-surface transition-colors flex-shrink-0" aria-label="Dismiss notification" onclick="this.parentElement.remove()">
                 <span class="material-symbols-outlined text-base">close</span>
             </button>
         `;
@@ -3426,19 +3624,27 @@
     let keysList = [];
 
     async function loadApiKeys() {
+        const tbody = document.getElementById('keys-table-body');
+        if (tbody) {
+            setLoadingRows(tbody, 5, 3);
+        }
         try {
             const resp = await fetch('/api/keys');
-            if (!resp.ok) return;
+            if (!resp.ok) {
+                throw new Error(`Request failed (${resp.status})`);
+            }
             keysList = await resp.json();
             
-            const tbody = document.getElementById('keys-table-body');
             if (!tbody) return;
 
             if (keysList.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="5" class="px-8 py-6 text-center text-on-surface-variant font-medium">
-                            No API keys configured. Set one up to enable fallbacks!
+                        <td colspan="5" class="px-8 py-8">
+                            <div class="state-message" data-tone="accent">
+                                <p class="font-semibold text-on-surface">No API keys configured yet.</p>
+                                <p class="text-sm text-on-surface-variant mt-1">Add a provider key to unlock model fallbacks and routing.</p>
+                            </div>
                         </td>
                     </tr>`;
                 return;
@@ -3471,6 +3677,24 @@
             }).join('');
         } catch (e) {
             console.error('Failed to load API keys:', e);
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-8 py-8">
+                            <div class="state-message" data-tone="danger">
+                                <div class="flex items-start gap-3">
+                                    <span class="material-symbols-outlined text-primary mt-0.5" style="font-variation-settings:'FILL' 1">error</span>
+                                    <div class="flex-1">
+                                        <p class="font-semibold text-on-surface">Could not load API keys.</p>
+                                        <p class="text-sm text-on-surface-variant mt-1">The key registry is temporarily unavailable.</p>
+                                        <button type="button" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold" onclick="loadApiKeys()">Retry</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }
         }
     }
 

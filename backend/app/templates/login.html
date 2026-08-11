@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Naru Assistant — Authentication</title>
+    <title>OmniWA | Authentication</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg?v=5" />
+    <meta name="description" content="Authenticate to OmniWA, the autonomous WhatsApp AI assistant dashboard." />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;600&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -11,8 +13,10 @@
             theme: {
                 extend: {
                     colors: {
-                        primary: '#e21e26', // Crimson Red
-                        secondary: '#00677f', // Deep Teal
+                        primary: '#25D366',
+                        secondary: '#0A0D14',
+                        surface: '#121418',
+                        line: 'rgba(255,255,255,0.10)'
                     },
                     fontFamily: {
                         sans: ['Geist', 'sans-serif'],
@@ -23,65 +27,105 @@
         }
     </script>
     <style>
-        .glass {
-            background: rgba(255, 255, 255, 0.7);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.4);
+        :root {
+            color-scheme: dark;
         }
-        .glow-red {
-            box-shadow: 0 0 40px rgba(226, 30, 38, 0.15);
+        body {
+            background:
+                radial-gradient(circle at 15% 20%, rgba(37, 211, 102, 0.20), transparent 22%),
+                radial-gradient(circle at 85% 15%, rgba(37, 211, 102, 0.10), transparent 18%),
+                linear-gradient(180deg, #0A0D14 0%, #121418 100%);
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.10);
+        }
+        .glow {
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+        }
+        input:focus-visible,
+        button:focus-visible,
+        a:focus-visible {
+            outline: 3px solid rgba(37, 211, 102, 0.35);
+            outline-offset: 2px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
         }
     </style>
 </head>
-<body class="bg-[#fafafa] font-sans min-h-screen flex items-center justify-center relative overflow-hidden">
-    <!-- Glowing background decorative circles -->
-    <div class="absolute -top-40 -left-40 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
-    <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-secondary/5 rounded-full blur-3xl pointer-events-none"></div>
-
-    <div class="w-full max-w-md p-6 relative z-10">
-        <!-- Logo and Header -->
-        <div class="text-center mb-8">
-            <h1 class="font-display text-4xl font-bold tracking-tight text-neutral-800">
-                NARU<span class="text-primary">.</span>
-            </h1>
-            <p class="text-neutral-500 mt-2 font-medium">Conversational Operating System</p>
-        </div>
-
-        <!-- Glassmorphism Login Card -->
-        <div class="glass rounded-3xl p-8 shadow-2xl glow-red">
-            <h2 class="font-display text-2xl font-semibold text-neutral-800 mb-6 text-center">Admin Access</h2>
-            
-            <form action="/login" method="POST" class="space-y-6">
-                <div>
-                    <label for="password" class="block text-sm font-semibold text-neutral-600 mb-2">Security Password</label>
-                    <input type="password" name="password" id="password" required 
-                        placeholder="••••••••" 
-                        class="w-full px-4 py-3 rounded-2xl border border-neutral-200 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition bg-white/50 text-neutral-800 placeholder-neutral-300">
-                </div>
-
-                <!-- Error Message (if any) -->
-                <div id="error-box" class="hidden text-sm font-semibold text-primary text-center">
-                    Incorrect password. Please try again.
-                </div>
-
-                <button type="submit" 
-                    class="w-full py-3.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-2xl font-semibold shadow-lg transition active:scale-[0.98] duration-150">
-                    Authenticate Session
-                </button>
-            </form>
-        </div>
-
-        <div class="text-center mt-8 text-xs text-neutral-400">
-            Naru AI Assistant © 2026. Protected by security layer.
-        </div>
+<body class="font-sans min-h-screen flex items-center justify-center relative overflow-hidden text-white">
+    <a href="#login-card" class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:rounded-full focus:bg-white focus:text-secondary">Skip to login form</a>
+    <div class="absolute inset-0 pointer-events-none opacity-90">
+        <div class="absolute -top-40 -left-40 w-96 h-96 bg-primary/10 rounded-full blur-3xl"></div>
+        <div class="absolute bottom-[-8rem] right-[-6rem] w-[30rem] h-[30rem] bg-white/5 rounded-full blur-3xl"></div>
     </div>
 
+    <main class="w-full max-w-md p-6 relative z-10">
+        <section id="login-card" class="glass glow rounded-[28px] p-8 md:p-10 shadow-2xl">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center p-3 rounded-2xl bg-primary/10 border border-primary/20 mb-5 shadow-lg shadow-black/20">
+                    <img src="/logo.svg?v=5" alt="OmniWA Logo" class="w-14 h-14 object-contain drop-shadow-md" />
+                </div>
+                <h1 class="font-display text-4xl font-semibold tracking-tight text-white">
+                    OmniWA
+                </h1>
+                <p class="text-white/68 mt-3 font-medium leading-relaxed">
+                    Autonomous WhatsApp AI assistant dashboard
+                </p>
+            </div>
+
+            <form action="/login" method="POST" class="space-y-5">
+                <div class="space-y-2">
+                    <label for="password" class="block text-sm font-semibold text-white/82">Admin password</label>
+                    <input type="password" name="password" id="password" required
+                        autocomplete="current-password"
+                        placeholder="Enter your password"
+                        aria-describedby="password-help error-box"
+                        class="w-full px-4 py-3.5 rounded-2xl border border-white/10 bg-white/6 text-white placeholder:text-white/32 transition focus:border-primary/40">
+                    <p id="password-help" class="text-xs text-white/48 leading-relaxed">
+                        Use the administrator password for this deployment.
+                    </p>
+                </div>
+
+                <div id="error-box" class="hidden state-message" data-tone="danger" role="alert" aria-live="assertive">
+                    <p class="font-semibold text-white">Incorrect password.</p>
+                    <p class="text-sm text-white/72 mt-1">Check the credentials and try again.</p>
+                </div>
+
+                <button type="submit"
+                    class="w-full py-3.5 bg-primary hover:bg-primary/90 text-secondary rounded-2xl font-semibold shadow-lg shadow-black/20 transition active:scale-[0.99] duration-150">
+                    Authenticate session
+                </button>
+            </form>
+
+            <div class="mt-8 pt-5 border-t border-white/10 flex items-center justify-between text-xs text-white/42">
+                <span>OmniWA AI Assistant</span>
+                <span>© 2026</span>
+            </div>
+        </section>
+
+        <p class="text-center mt-6 text-xs text-white/38 leading-relaxed">
+            Secure admin access for autonomous chat, scheduling, and voice workflows.
+        </p>
+    </main>
+
     <script>
-        // Check url parameters for error
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('error') === 'true') {
-            document.getElementById('error-box').classList.remove('hidden');
+        const errorBox = document.getElementById('error-box');
+        const password = document.getElementById('password');
+        if (urlParams.get('error') === 'true' && errorBox) {
+            errorBox.classList.remove('hidden');
+            password.setAttribute('aria-invalid', 'true');
+            password.focus();
+        } else if (password) {
+            password.focus();
         }
     </script>
 </body>
