@@ -1,9 +1,9 @@
 @echo off
-REM Startup script for Event-Driven WhatsApp Calendar Agent
+REM Startup script for omniWA Autonomous WhatsApp AI Assistant & Personal OS
 REM Starts all required services using Docker Compose
 
 echo ======================================
-echo WhatsApp Calendar Agent - Event-Driven
+echo omniWA WhatsApp AI Assistant & Personal OS
 echo ======================================
 echo.
 

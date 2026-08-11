@@ -241,7 +241,7 @@ async def test_3_response_to_whatsapp():
             # List message
             success = await whatsapp_service.send_list_message(
                 to=recipient,
-                header="Calendar Agent",
+                header="omniWA AI Assistant",
                 body="🤖 Test message from your AI agent! Select an option:",
                 footer="Powered by AI",
                 button_text="View Options",

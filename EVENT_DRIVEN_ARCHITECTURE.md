@@ -2,7 +2,7 @@
 
 ## Overview
 
-The WhatsApp Calendar Agent has been upgraded from a reactive request/response system to a fully event-driven, proactive scheduling assistant with:
+The omniWA Autonomous WhatsApp AI Assistant has been upgraded from a reactive request/response system to a fully event-driven, proactive AI personal assistant with:
 
 - ✅ **Redis Streams** for durable message queueing
 - ✅ **Redis Sorted Sets** for delayed job scheduling  

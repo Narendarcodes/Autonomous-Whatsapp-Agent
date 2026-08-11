@@ -1,6 +1,6 @@
-# 🤖 WhatsApp AI Agent (Hermes Operating System v2.1)
+# 🤖 omniWA (Hermes Operating System v2.1)
 
-> Enterprise-grade, privacy-compliant WhatsApp AI Assistant powered by the **Hermes ReAct Engine**, **LiteLLM Multi-Provider Fallback Router**, **FastMCP Google Workspace Integration**, and **Evolution API**.
+> Enterprise-grade, privacy-compliant Autonomous WhatsApp AI Assistant powered by the **Hermes ReAct Engine**, **LiteLLM Multi-Provider Fallback Router**, **FastMCP Google Workspace Integration**, and **Evolution API**.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green.svg)](https://fastapi.tiangolo.com/)
@@ -16,7 +16,7 @@
 
 ## 📋 Overview
 
-The **WhatsApp AI Agent** turns WhatsApp into a full-fledged **Conversational Operating System**. Built around Nous Research's **Hermes Agent ReAct Loop**, it operates autonomously, executes tool calls across your entire **Google Workspace** (Calendar, Drive, Docs, Sheets, Gmail), manages permissions for multiple users via a web dashboard, processes voice notes, enforces DPDP privacy compliance, and operates within an 8-container production Docker environment.
+**omniWA** turns WhatsApp into a full-fledged **Conversational Operating System**. Built around Nous Research's **Hermes Agent ReAct Loop**, it operates autonomously, executes tool calls across your entire **Google Workspace** (Calendar, Drive, Docs, Sheets, Gmail), manages permissions for multiple users via a web dashboard, processes voice notes, enforces DPDP privacy compliance, and operates within an 8-container production Docker environment.
 
 ---
 

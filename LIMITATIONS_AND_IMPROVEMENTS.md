@@ -1,6 +1,6 @@
 # 🔍 System Limitations & Improvement Opportunities
 
-**WhatsApp AI Calendar Agent - Technical Analysis**  
+**omniWA — Autonomous WhatsApp AI Assistant & Personal OS - Technical Analysis**  
 *Date: November 16, 2025*
 
 ---

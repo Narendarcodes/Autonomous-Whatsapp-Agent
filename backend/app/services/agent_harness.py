@@ -68,23 +68,23 @@ async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: 
     except Exception:
         current_time_str = now.strftime("%A, %d %B %Y, %I:%M %p")
 
-    # Build the rich system prompt context for Naru AI OS
-    narw_os_context = (
+    # Build the rich system prompt context for omniWA
+    omniwa_os_context = (
         f"[SYSTEM IDENTITY & ENVIRONMENT CONTEXT]\n"
-        f"You are the brain of Naru AI OS, a production-grade WhatsApp-native AI Operating System.\n"
+        f"You are the brain of omniWA, a production-grade WhatsApp-native AI Operating System.\n"
         f"Your configured identity name is: {bot_name}\n"
         f"You are conversing with the owner/user named: {owner_name}\n"
         f"Current system date and time: {current_time_str}\n"
         f"Operating relationship mode: {bot_mode}\n\n"
         f"[ACTIVE SYSTEM CONNECTIONS]\n"
         f"{chr(10).join(active_connections) if active_connections else '- Google Workspace: DISCONNECTED'}\n\n"
-        f"Note: If the user requests actions for a DISCONNECTED tool, direct them to link it in their Naru AI OS web dashboard. Do NOT guide them through manual CLI or local setup flows."
+        f"Note: If the user requests actions for a DISCONNECTED tool, direct them to link it in their omniWA web dashboard. Do NOT guide them through manual CLI or local setup flows."
     )
 
     if system_prompt:
-        final_system_prompt = f"{narw_os_context}\n\n[ADDITIONAL CONTEXT]\n{system_prompt}"
+        final_system_prompt = f"{omniwa_os_context}\n\n[ADDITIONAL CONTEXT]\n{system_prompt}"
     else:
-        final_system_prompt = narw_os_context
+        final_system_prompt = omniwa_os_context
 
     headers = {
         "Content-Type": "application/json",

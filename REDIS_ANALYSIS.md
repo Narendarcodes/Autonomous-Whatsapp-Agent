@@ -1,4 +1,4 @@
-# Redis Role & Impact Analysis - WhatsApp AI Calendar Agent
+# Redis Role & Impact Analysis - omniWA Autonomous WhatsApp AI Assistant
 
 ## 📊 What Redis Does in Your Project
 

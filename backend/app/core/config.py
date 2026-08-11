@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    APP_NAME: str = "WhatsApp AI Agent"
+    APP_NAME: str = "omniWA"
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
     DEBUG: bool = True

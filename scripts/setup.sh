@@ -1,11 +1,11 @@
 #!/bin/bash
-# Setup script for WhatsApp AI Calendar Agent (Linux/Mac)
+# Setup script for omniWA Autonomous WhatsApp AI Assistant (Linux/Mac)
 # For Windows, use PowerShell or convert to .bat
 
 set -e
 
 echo "=========================================="
-echo "WhatsApp AI Calendar Agent - Setup"
+echo "omniWA WhatsApp AI Assistant & Personal OS - Setup"
 echo "=========================================="
 echo ""
 

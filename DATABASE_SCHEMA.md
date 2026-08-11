@@ -1,4 +1,4 @@
-# WhatsApp Calendar Agent - Database Schema
+# omniWA AI Assistant & Personal OS - Database Schema
 
 ## Overview
 The system uses a hybrid database architecture:

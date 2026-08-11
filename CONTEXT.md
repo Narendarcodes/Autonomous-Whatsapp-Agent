@@ -1,4 +1,4 @@
-# WhatsApp AI Agent — Current Architecture (v2.1)
+# omniWA — Current Architecture (v2.1)
 
 ## System Status
 
