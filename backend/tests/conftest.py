@@ -7,6 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 # 1. Modify settings to test DB BEFORE importing app modules
 from app.core.config import settings
+if settings.POSTGRES_HOST == "postgres":
+    settings.POSTGRES_HOST = "localhost"
+if settings.REDIS_HOST == "redis":
+    settings.REDIS_HOST = "localhost"
+
 if not settings.POSTGRES_DB.endswith("_test"):
     settings.POSTGRES_DB = settings.POSTGRES_DB + "_test"
 

@@ -2,7 +2,10 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.api import health, oauth, permissions, setup, webhooks
 from app.core.config import settings
@@ -46,9 +49,23 @@ async def lifespan(app: FastAPI):
     await get_redis()
     await ensure_consumer_group()
     
+    # Assert evolution_api database for Evolution API session persistence
+    from sqlalchemy import text
+    try:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        base_url = settings.database_url.rsplit("/", 1)[0]
+        admin_engine = create_async_engine(f"{base_url}/postgres", isolation_level="AUTOCOMMIT")
+        async with admin_engine.connect() as conn:
+            res = await conn.execute(text("SELECT 1 FROM pg_database WHERE datname='evolution_api'"))
+            if not res.scalar():
+                await conn.execute(text("CREATE DATABASE evolution_api"))
+                logger.info("Lifespan startup: Created 'evolution_api' database in PostgreSQL for WhatsApp session persistence.")
+        await admin_engine.dispose()
+    except Exception as evo_db_err:
+        logger.debug("Evolution DB assertion check: %s", evo_db_err)
+
     # Assert trust_level column in users table
     from app.db.database import AsyncSessionLocal
-    from sqlalchemy import text
     
     async with AsyncSessionLocal() as db:
         try:
@@ -194,6 +211,34 @@ app = FastAPI(
     debug=settings.DEBUG,
     lifespan=lifespan,
 )
+
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/logo.svg")
+async def get_logo_svg():
+    logo_path = os.path.join(static_dir, "logo.svg")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/svg+xml")
+    return Response(status_code=404)
+
+@app.get("/logo.png")
+async def get_logo_png():
+    logo_path = os.path.join(static_dir, "logo.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/png")
+    return Response(status_code=404)
+
+@app.get("/favicon.ico")
+async def get_favicon():
+    logo_path = os.path.join(static_dir, "logo.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/png")
+    svg_path = os.path.join(static_dir, "logo.svg")
+    if os.path.exists(svg_path):
+        return FileResponse(svg_path, media_type="image/svg+xml")
+    return Response(status_code=404)
 
 app.include_router(health.router, tags=["health"])
 app.include_router(webhooks.router, tags=["webhooks"])

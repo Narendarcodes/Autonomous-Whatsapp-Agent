@@ -29,31 +29,33 @@ def error_html(title: str, message: str) -> HTMLResponse:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} - Naru AI</title>
+    <title>{title} - OmniWA</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Geist:wght@300;400;600&display=swap" rel="stylesheet"/>
     <style>
         body {{
-            background: radial-gradient(circle at center, #1a0b0d 0%, #080304 100%);
-            color: #ffeef0;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(37, 211, 102, 0.18), transparent 24%),
+                linear-gradient(180deg, #0A0D14 0%, #121418 100%);
+            color: #f0fdf4;
             font-family: 'Geist', sans-serif;
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             overflow: hidden;
         }}
         .card {{
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 28px;
             padding: 48px;
             width: 100%;
             max-width: 420px;
             text-align: center;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
             animation: fadeIn 0.6s ease-out forwards;
         }}
         h1 {{
@@ -66,28 +68,28 @@ def error_html(title: str, message: str) -> HTMLResponse:
         p {{
             font-size: 15px;
             line-height: 1.6;
-            color: #c9b1b4;
+            color: rgba(240, 253, 244, 0.72);
             margin-bottom: 32px;
         }}
         .btn {{
             display: inline-block;
-            background: linear-gradient(135deg, #e21e26 0%, #b90015 100%);
-            color: white;
+            background: #25D366;
+            color: #0A0D14;
             text-decoration: none;
             padding: 14px 28px;
             font-weight: 600;
-            border-radius: 12px;
+            border-radius: 9999px;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 12px rgba(226, 30, 38, 0.3);
+            box-shadow: 0 12px 30px rgba(37, 211, 102, 0.22);
         }}
         .btn:hover {{
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(226, 30, 38, 0.5);
+            box-shadow: 0 16px 34px rgba(37, 211, 102, 0.28);
         }}
         .icon {{
             font-size: 48px;
             margin-bottom: 24px;
-            color: #e21e26;
+            color: #25D366;
         }}
         @keyframes fadeIn {{
             from {{ opacity: 0; transform: translateY(20px); }}
@@ -97,7 +99,7 @@ def error_html(title: str, message: str) -> HTMLResponse:
 </head>
 <body>
     <div class="card">
-        <div class="icon">⚠️</div>
+        <div class="icon">⚠</div>
         <h1>{title}</h1>
         <p>{message}</p>
         <a href="/dashboard" class="btn">Return to Dashboard</a>

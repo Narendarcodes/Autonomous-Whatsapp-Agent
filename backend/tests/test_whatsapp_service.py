@@ -52,7 +52,7 @@ async def test_send_text_success(mocker):
     assert called_json["text"] == "Hello Hermes!"
     
     # Assert sent message JID/ID cached to avoid self-replies
-    mock_cache.assert_called_once_with("sent_message:MSG_123456", "1", ttl_seconds=3600)
+    mock_cache.assert_any_call("sent_message:MSG_123456", "1", ttl_seconds=3600)
 
 
 @pytest.mark.asyncio

@@ -63,8 +63,8 @@ async def test_rebuild_litellm_config(db_session):
     await db_session.commit()
     
     # Run config rebuilder against a mock file location or write directly
-    # In tests, we will mock TARGET_PATH to prevent overwrite of the real config
-    mock_target_path = "/tmp/mock_litellm_config.yaml"
+    import tempfile
+    mock_target_path = os.path.join(tempfile.gettempdir(), "mock_litellm_config.yaml")
     
     with patch("app.services.litellm_service.TARGET_PATH", mock_target_path):
         success = await rebuild_litellm_config(db_session)
