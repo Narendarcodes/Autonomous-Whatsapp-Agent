@@ -3,7 +3,7 @@ REM Startup script for omniWA Autonomous WhatsApp AI Assistant & Personal OS
 REM Starts all required services using Docker Compose
 
 echo ======================================
-echo omniWA WhatsApp AI Assistant & Personal OS
+echo omniWA WhatsApp AI Assistant ^& Personal OS
 echo ======================================
 echo.
 

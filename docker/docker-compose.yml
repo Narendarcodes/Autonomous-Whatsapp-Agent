@@ -270,6 +270,7 @@ services:
 
   # ==================== LOCAL SPEECH-TO-TEXT (WhisperX / Faster-Whisper) ====================
   whisper-api:
+    profiles: ["local-audio"]
     image: fedirz/faster-whisper-server:latest-cuda
     container_name: whatsapp_whisper_api
     restart: unless-stopped
@@ -291,7 +292,8 @@ services:
 
   # ==================== LOCAL TEXT-TO-SPEECH (Kokoro-82M) ====================
   kokoro-api:
-    image: remsky/kokoro-fastapi:latest
+    profiles: ["local-audio"]
+    image: remsky/kokoro-fastapi:v0.1.0
     container_name: whatsapp_kokoro_api
     restart: unless-stopped
     environment:
