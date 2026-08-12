@@ -18,26 +18,27 @@
             theme: {
                 extend: {
                     "colors": {
-                        "primary-container": "#00a884",
+                        "primary-container": "#ecfdf5",
+                        "on-primary-container": "#047857",
                         "surface": "#ffffff",
-                        "background": "#f0f2f5",
-                        "primary": "#00a884",
-                        "secondary": "#075e54",
-                        "surface-container-low": "#f7f9fa",
+                        "background": "#f8fafc",
+                        "primary": "#059669",
+                        "secondary": "#0f172a",
+                        "surface-container-low": "#f8fafc",
                         "surface-bright": "#ffffff",
-                        "outline-variant": "#d1d7db",
-                        "on-surface": "#111b21",
-                        "on-surface-variant": "#5d6e77",
+                        "outline-variant": "#e2e8f0",
+                        "on-surface": "#0f172a",
+                        "on-surface-variant": "#475569",
                         "surface-container-lowest": "#ffffff",
-                        "surface-container-highest": "#d1d7db",
-                        "surface-container": "#e9edef",
-                        "surface-container-high": "#dfe5e7",
-                        "outline": "#8696a0",
-                        "error": "#ba1a1a",
-                        "secondary-container": "#e7fceb",
-                        "on-secondary-container": "#075e54",
-                        "inverse-surface": "#111b21",
-                        "inverse-on-surface": "#e9edef"
+                        "surface-container-highest": "#cbd5e1",
+                        "surface-container": "#f1f5f9",
+                        "surface-container-high": "#e2e8f0",
+                        "outline": "#94a3b8",
+                        "error": "#ef4444",
+                        "secondary-container": "#f0fdf4",
+                        "on-secondary-container": "#166534",
+                        "inverse-surface": "#0f172a",
+                        "inverse-on-surface": "#f1f5f9"
                     },
                     "borderRadius": {
                         "DEFAULT": "0.25rem",
@@ -104,24 +105,24 @@
         }
         body {
             background:
-                radial-gradient(circle at top left, rgba(0, 168, 132, 0.12), transparent 28%),
-                radial-gradient(circle at 85% 8%, rgba(7, 94, 84, 0.08), transparent 22%),
-                #f0f2f5;
+                radial-gradient(circle at top left, rgba(16, 185, 129, 0.08), transparent 28%),
+                radial-gradient(circle at 85% 8%, rgba(15, 23, 42, 0.04), transparent 22%),
+                #f8fafc;
             font-family: 'Geist', sans-serif;
-            color: #111b21;
+            color: #0f172a;
             overflow-x: hidden;
             text-rendering: geometricPrecision;
         }
         .glass-panel {
-            background: rgba(255, 255, 255, 0.92);
+            background: rgba(255, 255, 255, 0.96);
             backdrop-filter: blur(12px);
-            border: 1px solid rgba(209, 215, 219, 0.8);
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.03);
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .glass-panel:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0, 168, 132, 0.08);
+            box-shadow: 0 10px 25px rgba(16, 185, 129, 0.06);
         }
         button,
         input,
@@ -134,7 +135,7 @@
         select:focus-visible,
         textarea:focus-visible,
         a:focus-visible {
-            outline: 3px solid rgba(0, 168, 132, 0.4);
+            outline: 3px solid rgba(16, 185, 129, 0.35);
             outline-offset: 2px;
         }
         button:disabled {
@@ -142,27 +143,27 @@
             opacity: 0.6;
         }
         .state-message {
-            border: 1px solid rgba(134, 150, 160, 0.2);
-            background: rgba(255, 255, 255, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            background: rgba(255, 255, 255, 0.95);
             border-radius: 16px;
             padding: 1rem;
         }
         .state-message[data-tone="danger"] {
-            border-color: rgba(186, 26, 26, 0.18);
-            background: rgba(255, 245, 245, 0.92);
+            border-color: rgba(239, 68, 68, 0.18);
+            background: rgba(254, 242, 242, 0.92);
         }
         .state-message[data-tone="accent"] {
-            border-color: rgba(0, 168, 132, 0.2);
-            background: rgba(231, 252, 235, 0.9);
+            border-color: rgba(16, 185, 129, 0.2);
+            background: rgba(236, 253, 245, 0.9);
         }
         .material-symbols-outlined {
             font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
             vertical-align: middle;
         }
         .voice-card-active, .mode-card-active {
-            border-color: #00a884;
-            background-color: #e7fceb;
-            box-shadow: 0 0 15px rgba(0, 168, 132, 0.15);
+            border-color: #059669;
+            background-color: #ecfdf5;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
         }
         input[type="time"]::-webkit-calendar-picker-indicator {
             filter: grayscale(1) contrast(0.5);
@@ -181,9 +182,9 @@
             position: relative;
             z-index: 9999 !important;
             /* Clean glowing ring - NO box-shadow overlay so content stays readable */
-            outline: 3px solid #00a884 !important;
+            outline: 2.5px solid #10b981 !important;
             outline-offset: 4px;
-            box-shadow: 0 0 0 7px rgba(0, 168, 132, 0.15), 0 0 24px rgba(0, 168, 132, 0.35) !important;
+            box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.15), 0 0 20px rgba(16, 185, 129, 0.25) !important;
             border-radius: 12px;
         }
         .stagger-1 { animation-delay: 0.05s; }
@@ -336,11 +337,13 @@
 <!-- Single semi-transparent overlay - no blur so the spotlighted element stays readable -->
 <div id="tutorial-overlay" class="fixed inset-0 z-[9990] hidden" style="background: rgba(0,0,0,0.45); transition: opacity 0.3s;"></div>
 
-<!-- Tutorial card: always fixed at bottom-center, never jumps around -->
-<div id="tutorial-card" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white rounded-2xl shadow-2xl z-[9999] hidden w-full max-w-md transition-all duration-300" style="border: 1.5px solid rgba(0,168,132,0.25);">
-    <!-- WhatsApp green top accent bar -->
-    <div class="h-1 w-full rounded-t-2xl" style="background: linear-gradient(90deg, #00a884, #075e54);"></div>
-    <div class="p-5">
+<!-- Tutorial card: absolute positioned with a dynamic pointer arrow pointing to the highlighted target -->
+<div id="tutorial-card" class="absolute bg-white rounded-2xl shadow-2xl z-[9999] hidden w-full max-w-md transition-all duration-300 border border-emerald-500/20">
+    <!-- Emerald gradient top accent bar -->
+    <div class="h-1.5 w-full rounded-t-2xl bg-gradient-to-r from-emerald-500 to-teal-600"></div>
+    <!-- Pointer Arrow -->
+    <div id="tutorial-arrow" class="absolute w-4 h-4 bg-white rotate-45 border-t border-l border-emerald-500/20" style="display: none;"></div>
+    <div class="p-5 relative z-10">
         <!-- Header row: step counter + title + close -->
         <div class="flex justify-between items-center mb-1">
             <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/50" id="tutorial-step-counter">Step 1 of 10</span>
@@ -348,18 +351,16 @@
                 <span class="material-symbols-outlined text-base text-on-surface-variant/40 group-hover:text-primary">close</span>
             </button>
         </div>
-        <h4 class="font-bold text-base mb-2" style="color: #00a884;" id="tutorial-title">Step Title</h4>
-        <!-- Arrow pointing up to highlight target above card -->
+        <h4 class="font-bold text-base mb-2 text-primary" id="tutorial-title">Step Title</h4>
         <div class="flex items-start gap-3 mb-4">
-            <span class="material-symbols-outlined text-2xl mt-0.5 flex-shrink-0" style="color: #00a884; font-variation-settings: 'FILL' 1;">arrow_upward</span>
             <p class="font-body-md text-on-surface-variant text-sm leading-relaxed" id="tutorial-text">Explanation copy goes here.</p>
         </div>
         <!-- Progress dots + nav buttons -->
         <div class="flex justify-between items-center">
             <div class="flex gap-1.5" id="tutorial-dots"></div>
             <div class="flex gap-2">
-                <button id="tutorial-prev-btn" onclick="prevTutorialStep()" class="px-3 py-1.5 border rounded-lg font-semibold text-xs transition-all" style="border-color: #075e54; color: #075e54;">Back</button>
-                <button id="tutorial-next-btn" onclick="nextTutorialStep()" class="px-4 py-1.5 text-white rounded-lg font-semibold text-xs transition-all hover:brightness-110 active:scale-95" style="background: #00a884;">Next</button>
+                <button id="tutorial-prev-btn" onclick="prevTutorialStep()" class="px-3 py-1.5 border border-outline text-on-surface hover:bg-surface-container rounded-lg font-semibold text-xs transition-all">Back</button>
+                <button id="tutorial-next-btn" onclick="nextTutorialStep()" class="px-4 py-1.5 text-white bg-primary rounded-lg font-semibold text-xs transition-all hover:brightness-110 active:scale-95">Next</button>
             </div>
         </div>
     </div>
@@ -2992,6 +2993,70 @@
         }
     }
 
+    function positionTutorialCard(targetElement) {
+        const card = document.getElementById('tutorial-card');
+        const arrow = document.getElementById('tutorial-arrow');
+        if (!card) return;
+
+        if (!targetElement) {
+            // Fallback: fixed at center-bottom if no target element exists
+            card.style.position = 'fixed';
+            card.style.top = '';
+            card.style.left = '50%';
+            card.style.transform = 'translate(-50%, 0)';
+            card.style.bottom = '1.5rem';
+            if (arrow) arrow.style.display = 'none';
+            return;
+        }
+
+        // Use absolute positioning relative to document body
+        card.style.position = 'absolute';
+        const rect = targetElement.getBoundingClientRect();
+        const cardWidth = card.offsetWidth || 380;
+        const cardHeight = card.offsetHeight || 190;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        // Default: Place card below the target element with a gap
+        let top = rect.bottom + window.scrollY + 14;
+        let left = rect.left + window.scrollX + (rect.width / 2) - (cardWidth / 2);
+        let placement = 'bottom';
+
+        // Check if there is enough vertical space below. If not, place it above the target.
+        if (rect.bottom + cardHeight + 40 > viewportHeight) {
+            top = rect.top + window.scrollY - cardHeight - 14;
+            placement = 'top';
+        }
+
+        // Prevent off-screen horizontal overflows
+        if (left < 12) {
+            left = 12;
+        } else if (left + cardWidth > viewportWidth - 12) {
+            left = viewportWidth - cardWidth - 12;
+        }
+
+        // Apply coordinates
+        card.style.bottom = '';
+        card.style.top = `${top}px`;
+        card.style.left = `${left}px`;
+        card.style.transform = 'none';
+
+        // Position arrow pointing directly to target center
+        if (arrow) {
+            arrow.style.display = 'block';
+            const arrowLeft = (rect.left + rect.width / 2) - left - 8; // 8px is half of w-4
+            arrow.style.left = `${Math.max(16, Math.min(cardWidth - 24, arrowLeft))}px`;
+
+            if (placement === 'bottom') {
+                arrow.className = "absolute -top-2 w-4 h-4 bg-white rotate-45 border-t border-l border-emerald-500/20";
+                arrow.style.bottom = '';
+            } else {
+                arrow.className = "absolute -bottom-2 w-4 h-4 bg-white rotate-45 border-b border-r border-emerald-500/20";
+                arrow.style.top = '';
+            }
+        }
+    }
+
     function renderTutorialStep() {
         const step = tutorialSteps[tutorialStepIndex];
         
@@ -3008,10 +3073,10 @@
         document.getElementById('tutorial-text').innerText = step.text;
         document.getElementById('tutorial-step-counter').innerText = `Step ${tutorialStepIndex + 1} of ${tutorialSteps.length}`;
 
-        // Render dot steps
+        // Render dot steps with brand emerald
         const dotsEl = document.getElementById('tutorial-dots');
         dotsEl.innerHTML = tutorialSteps.map((_, i) => `
-            <div class="w-2 h-2 rounded-full transition-all duration-300" style="background: ${i === tutorialStepIndex ? '#e21e26' : '#d4d4d4'}; transform: scale(${i === tutorialStepIndex ? '1.3' : '1'});"></div>
+            <div class="w-2 h-2 rounded-full transition-all duration-300" style="background: ${i === tutorialStepIndex ? '#059669' : '#cbd5e1'}; transform: scale(${i === tutorialStepIndex ? '1.3' : '1'});"></div>
         `).join('');
 
         // Back button visibility
@@ -3026,16 +3091,21 @@
         const nextBtn = document.getElementById('tutorial-next-btn');
         nextBtn.innerText = (tutorialStepIndex === tutorialSteps.length - 1) ? 'Finish' : 'Next';
 
-        // Apply spotlight: scroll target into view, add glowing ring
-        // Card stays fixed at bottom-center - no dynamic positioning needed
+        // Apply spotlight and position the tooltip card dynamically
         setTimeout(() => {
             const target = document.getElementById(step.elementId);
             if (target) {
                 target.classList.add('spotlight-active');
-                // Scroll target into view so user can see it above the fixed card
+                // Scroll target into view with margin
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Let scrolling settle before positioning card
+                setTimeout(() => {
+                    positionTutorialCard(target);
+                }, 100);
+            } else {
+                positionTutorialCard(null);
             }
-        }, 120);
+        }, 150);
     }
 
     // =========================================================
