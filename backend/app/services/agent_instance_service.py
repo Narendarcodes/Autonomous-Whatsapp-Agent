@@ -122,7 +122,7 @@ class AgentInstanceService:
         
         client = await self._get_client()
         try:
-            resp = await client.get(f"/instance/qrcode/{AGENT_INSTANCE_NAME}?image=true")
+            resp = await client.get(f"/instance/qrcode/{AGENT_INSTANCE_NAME}")
             if resp.status_code == 200:
                 data = resp.json()
                 qr = self._extract_qr(data)
