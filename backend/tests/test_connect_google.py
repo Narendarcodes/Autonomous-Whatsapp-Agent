@@ -326,3 +326,28 @@ def test_dashboard_no_fake_identity_in_connected_state():
     # The connected-panel name/phone elements must exist for JS to populate
     assert 'id="whatsapp-profile-name"' in html
     assert 'id="whatsapp-profile-phone"' in html
+
+
+def test_dashboard_qr_expiry_offers_recovery():
+    """F5 (impeccable): when the QR countdown hits 00:00 the UI must tell the
+    user what to do next (expiry message + visible recovery action), not just
+    silently flip the label."""
+    import re
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    # The expiry branch must exist and do more than set a label
+    m = re.search(r'if\s*\(secondsLeft\s*<=\s*0\)\s*\{(.*?)return;', html, re.S)
+    assert m, "QR countdown expiry branch not found"
+    branch = m.group(1)
+    assert "Expired" in branch, "expiry branch should mark state as expired"
+    # It must surface recovery: either show an expiry hint element or trigger refresh
+    assert ("wa-qr-expired-hint" in branch) or ("refreshQR()" in branch) or ("reconnectWhatsapp" in branch), (
+        "QR expiry must guide recovery (hint element or auto-refresh call)"
+    )
+
+    # A persistent hint element must exist in the QR slide markup
+    assert 'id="wa-qr-expired-hint"' in html, (
+        "Add a wa-qr-expired-hint element with recovery instructions near the QR timer"
+    )

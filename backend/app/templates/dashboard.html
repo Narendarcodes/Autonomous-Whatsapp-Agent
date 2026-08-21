@@ -522,6 +522,9 @@
                         <div class="h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
                             <div id="wa-timeout-progress" class="h-full bg-secondary w-full transition-all duration-1000"></div>
                         </div>
+                        <p id="wa-qr-expired-hint" class="hidden text-[11px] text-error font-semibold text-center pt-1">
+                            QR expired — tap <strong>Generate New QR</strong> for a fresh code, then scan within 3 minutes.
+                        </p>
                     </div>
 
                     <div class="flex gap-4">
@@ -1645,7 +1648,9 @@
         const labelEl = document.getElementById('wa-timeout-label');
         
         if (labelEl) labelEl.innerText = "Handshake Active";
-        
+        const expiredHint = document.getElementById('wa-qr-expired-hint');
+        if (expiredHint) expiredHint.classList.add('hidden');
+
         countdownInterval = setInterval(() => {
             if (secondsLeft <= 0) {
                 clearInterval(countdownInterval);
@@ -1653,6 +1658,9 @@
                 if (timerEl) timerEl.innerText = "00:00";
                 if (progressEl) progressEl.style.width = "0%";
                 if (labelEl) labelEl.innerText = "Handshake Expired";
+                // Recovery guidance: tell the user exactly what to do next
+                const hint = document.getElementById('wa-qr-expired-hint');
+                if (hint) hint.classList.remove('hidden');
                 return;
             }
             secondsLeft--;
