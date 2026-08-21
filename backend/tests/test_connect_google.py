@@ -388,7 +388,6 @@ def test_dashboard_no_ai_slop_tells():
 def test_dashboard_distinctive_font_pairing():
     """F7 (impeccable detector 'overused-font'): Geist and Space Grotesk are
     converged-on faces. The template must load a distinctive pairing instead."""
-    import re
     from pathlib import Path
 
     html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
@@ -401,3 +400,16 @@ def test_dashboard_distinctive_font_pairing():
     assert "Instrument+Sans" in html, "Load Instrument Sans from Google Fonts"
     assert '"Bricolage Grotesque"' in html, "Tailwind fontFamily must reference Bricolage Grotesque"
     assert '"Instrument Sans"' in html, "Tailwind fontFamily must reference Instrument Sans"
+
+
+def test_dashboard_single_primary_green():
+    """F8 (impeccable consistency finding): three competing greens
+    (#059669 primary / #00a884 legacy / #10b981 focus) fragment the palette.
+    Everything green must derive from the primary #059669 family."""
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    assert "#10b981" not in html, "legacy focus-ring green #10b981 — use #059669"
+    assert "#00a884" not in html, "legacy accent green #00a884 — use rgba(5, 150, 105, a)"
+    assert "rgba(0, 168, 132" not in html, "legacy accent rgb form — use rgba(5, 150, 105, a)"
