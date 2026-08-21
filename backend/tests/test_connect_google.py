@@ -181,3 +181,25 @@ def test_dashboard_script_tags_balanced(test_engine):
         default=(None, ""),
     )[1]
     assert last_tag.startswith("</"), f"File ends inside an open script block (last tag: {last_tag!r})"
+
+
+def test_dashboard_no_duplicate_static_ids(test_engine):
+    """F1 (impeccable finding): duplicate ids make getElementById resolve to the
+    first occurrence only — silently wrong element for connector forms.
+
+    Only checks STATIC markup (lines outside <script> blocks); JS template
+    literals legitimately reuse an id because one modal instance renders at a time.
+    """
+    import re
+    from collections import Counter
+    from pathlib import Path
+
+    tpl = Path(__file__).resolve().parents[1] / "app" / "templates" / "dashboard.html"
+    html = tpl.read_text(encoding="utf-8")
+
+    # Strip <script>...</script> blocks (template-literal HTML is rendered one-at-a-time)
+    static_html = re.sub(r"<script>.*?</script>", "", html, flags=re.S)
+
+    ids = re.findall(r'id="([^"]+)"', static_html)
+    dupes = {i: c for i, c in Counter(ids).items() if c > 1}
+    assert not dupes, f"Duplicate static ids found: {dupes}"
