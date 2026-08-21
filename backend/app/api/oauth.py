@@ -2,7 +2,7 @@
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from app.api.setup import verify_api_admin
@@ -110,23 +110,38 @@ def error_html(title: str, message: str) -> HTMLResponse:
 
 
 @router.get("/oauth/authorize")
-async def oauth_authorize(state: str = Query(None, description="Client-side state token"), dependencies=Depends(verify_api_admin)) -> RedirectResponse:
-    """Simple one-click OAuth redirect. Stores state and redirects user to Google login."""
-    # Generate a new state token if client didn't provide one
+async def oauth_authorize(
+    request: Request,
+    state: str = Query(None, description="Client-side state token"),
+    dependencies=Depends(verify_api_admin),
+) -> RedirectResponse:
+    """One-click OAuth redirect from the dashboard. State carries tenant_id + PKCE verifier."""
+    import json
+
+    from app.core.auth import get_principal
+    from fastapi import HTTPException
+
+    # Resolve the authenticated dashboard principal → tenant scope for the token
+    try:
+        principal = await get_principal(request)
+        tenant_id = principal.tenant_id
+    except HTTPException:
+        # Legacy session fallback → default tenant
+        tenant_id = 1
+
     oauth_state = state or secrets.token_urlsafe(24)
-    
-    # Store state, owner's phone, and code verifier for later callback
+
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.is_owner == True))
         owner = result.scalar_one_or_none()
         owner_phone = owner.wa_phone if owner else settings.OWNER_WA_PHONE.lstrip("+")
-        
+
     auth_url, code_verifier = build_authorization_url(oauth_state)
-    
-    import json
+
     state_data = {
         "phone": owner_phone,
-        "code_verifier": code_verifier
+        "code_verifier": code_verifier,
+        "tenant_id": tenant_id,  # multi-tenant: callback writes the token HERE
     }
     await cache_set(f"oauth_state:{oauth_state}", json.dumps(state_data), ttl_seconds=600)
     return RedirectResponse(url=auth_url)
@@ -161,11 +176,13 @@ async def oauth_callback(code: str, state: str) -> Any:
     import json
     phone = state_value
     code_verifier = None
+    tenant_id = None
     try:
         data = json.loads(state_value)
         if isinstance(data, dict):
             phone = data.get("phone")
             code_verifier = data.get("code_verifier")
+            tenant_id = data.get("tenant_id")  # multi-tenant scope (None = legacy)
     except json.JSONDecodeError:
         pass
 
@@ -174,7 +191,7 @@ async def oauth_callback(code: str, state: str) -> Any:
     except Exception as exc:
         logger.error("Token exchange failed: %s", exc)
         return error_html(
-            "Authorization Failed", 
+            "Authorization Failed",
             "Failed to exchange Google OAuth code for access tokens. Please try again."
         )
 
@@ -191,12 +208,16 @@ async def oauth_callback(code: str, state: str) -> Any:
                 await db.commit()
                 await db.refresh(user)
 
-        await store_user_credentials(db, user, creds)
-        
-        # Hot reload Hermes container to pick up Google tokens
-        from app.services.docker_manager import docker_manager
-        import asyncio
-        asyncio.create_task(docker_manager.restart_hermes_agent())
+        await store_user_credentials(db, user, creds, tenant_id=tenant_id)
+
+        # Legacy dev flow only: hot reload Hermes to pick up default-tenant token
+        if tenant_id is None or tenant_id == 1:
+            try:
+                from app.services.docker_manager import docker_manager
+                import asyncio
+                asyncio.create_task(docker_manager.restart_hermes_agent())
+            except Exception:
+                pass  # docker socket unavailable (dev) — sync_credentials_to_hermes already no-ops
 
     # Redirect to the dashboard with success parameter
     return RedirectResponse(url="/dashboard?google_success=true")

@@ -110,13 +110,52 @@ def sync_credentials_to_hermes(creds: Credentials) -> None:
         logger.error("Failed to sync Google credentials to Hermes: %s", e)
 
 
-async def store_user_credentials(db: AsyncSession, user: User, creds: Credentials) -> None:
+async def store_user_credentials(
+    db: AsyncSession,
+    user: User,
+    creds: Credentials,
+    tenant_id: int | None = None,
+) -> None:
+    """Store Google credentials on the User row (legacy) AND the tenant-scoped
+    CustomerGoogleToken row (multi-tenant source of truth).
+
+    omniWA owns these tokens; Hermes never receives a shared global token file.
+    The legacy Hermes-volume sync is gated to the default tenant (id=1) only —
+    it is a developer convenience, not the customer path.
+    """
     user.google_access_token_enc = encrypt_token(creds.token)
     if creds.refresh_token:
         user.google_refresh_token_enc = encrypt_token(creds.refresh_token)
     user.google_token_expiry = creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
+
+    # Tenant-scoped token row
+    if tenant_id is not None:
+        from sqlalchemy import select as _select
+        from app.models.models import CustomerGoogleToken
+
+        res = await db.execute(
+            _select(CustomerGoogleToken).where(
+                CustomerGoogleToken.tenant_id == tenant_id,
+                CustomerGoogleToken.user_wa_phone == user.wa_phone,
+            )
+        )
+        tok = res.scalar_one_or_none()
+        if tok is None:
+            tok = CustomerGoogleToken(tenant_id=tenant_id, user_wa_phone=user.wa_phone)
+            db.add(tok)
+        tok.access_token_enc = encrypt_token(creds.token)
+        if creds.refresh_token:
+            tok.refresh_token_enc = encrypt_token(creds.refresh_token)
+        tok.token_expiry = creds.expiry.replace(tzinfo=timezone.utc) if creds.expiry else None
+        tok.scopes = " ".join(creds.scopes) if creds.scopes else None
+        if getattr(user, "_google_email", None):
+            tok.email = user._google_email
+
     await db.commit()
-    sync_credentials_to_hermes(creds)
+
+    # Legacy dev convenience: only default-tenant tokens sync into Hermes' volume
+    if tenant_id is None or tenant_id == 1:
+        sync_credentials_to_hermes(creds)
 
 
 async def load_user_credentials(user: User, db: AsyncSession | None = None) -> Credentials | None:
