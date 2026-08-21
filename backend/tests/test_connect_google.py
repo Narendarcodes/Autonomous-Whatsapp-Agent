@@ -383,3 +383,21 @@ def test_dashboard_no_ai_slop_tells():
                     glows.append(component.strip()[:80])
                     break
     assert not glows, f"zero-offset blur glows found: {glows}"
+
+
+def test_dashboard_distinctive_font_pairing():
+    """F7 (impeccable detector 'overused-font'): Geist and Space Grotesk are
+    converged-on faces. The template must load a distinctive pairing instead."""
+    import re
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    for banned in ("Space+Grotesk", "Space Grotesk", "Geist"):
+        assert banned not in html, f"Overused font {banned!r} still referenced"
+
+    # Distinctive pairing must be loaded AND wired into the type system
+    assert "Bricolage+Grotesque" in html, "Load Bricolage Grotesque from Google Fonts"
+    assert "Instrument+Sans" in html, "Load Instrument Sans from Google Fonts"
+    assert '"Bricolage Grotesque"' in html, "Tailwind fontFamily must reference Bricolage Grotesque"
+    assert '"Instrument Sans"' in html, "Tailwind fontFamily must reference Instrument Sans"
