@@ -274,3 +274,36 @@ def test_dashboard_clickable_divs_are_interactive():
         line = dom[: m.start()].count("\n") + 1
         failures.append(f"L{line}: <{tag} ...onclick")
     assert not failures, f"Clickable non-interactive elements (add role=button + tabindex=0):\n" + "\n".join(failures)
+
+
+def test_dashboard_destructive_actions_not_primary_styled():
+    """F3 (impeccable): Disconnect Session must be danger-outline, not the
+    filled primary; Reset Whitelist must require typed confirmation."""
+    import re
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    # 1. Disconnect button must NOT use the filled-primary class combo
+    m = re.search(r'<button[^>]*\bid="tutorial-step-disconnect"[^>]*>(.*?)</button>', html, re.S)
+    assert m, "Disconnect button not found"
+    attrs = m.group(0)
+    is_filled_primary = "bg-primary text-white" in attrs
+    assert not is_filled_primary, (
+        "Disconnect Session uses filled-primary styling — visual weight inverted "
+        "for a destructive action. Use danger-outline."
+    )
+    assert 'data-tone="danger"' in attrs or "text-error" in attrs or "border-error" in attrs, (
+        "Disconnect Session should carry danger styling (data-tone=danger / text-error / border-error)"
+    )
+
+    # 2. Reset contacts must go through a typed-confirmation flow
+    reset_m = re.search(r'handleResetWhitelist\s*=\s*async\s*function', html)
+    assert reset_m, "handleResetWhitelist function not found"
+    body_start = html[reset_m.end(): reset_m.end() + 2000]
+    typed_gate = (
+        re.search(r'requireText\s*:\s*[\'"]RESET', body_start)
+        or (re.search(r'requireText\s*:\s*CONFIRM_WORD', body_start)
+            and re.search(r'CONFIRM_WORD\s*=\s*[\'"]RESET[\'"]', body_start))
+    )
+    assert typed_gate, "Reset contacts lacks typed confirmation (requireText 'RESET')"

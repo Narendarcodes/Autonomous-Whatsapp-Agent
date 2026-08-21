@@ -558,7 +558,7 @@
                             <p id="whatsapp-profile-phone" class="font-body-md text-on-surface-variant font-medium mt-1">+1 (555) 012-3456</p>
                         </div>
                         <div class="pt-2 flex flex-wrap justify-center md:justify-start gap-3">
-                            <button id="tutorial-step-disconnect" onclick="disconnectWhatsapp()" class="bg-primary text-white px-6 py-2.5 rounded-lg font-bold text-label-md hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/10">
+                            <button id="tutorial-step-disconnect" onclick="disconnectWhatsapp()" data-tone="danger" class="border border-error/40 text-error hover:bg-error/5 px-6 py-2.5 rounded-lg font-bold text-label-md transition-all select-none outline-none">
                                 Disconnect Session
                             </button>
                             <button onclick="loadDashboardData()" class="border border-secondary text-secondary px-6 py-2.5 rounded-lg font-bold text-label-md hover:bg-secondary/5 transition-all">
@@ -1236,7 +1236,7 @@
                     <div class="flex items-center gap-3">
                         <button onclick="handleResetWhitelist()" class="px-3 py-1.5 border border-error/30 text-error hover:bg-error/5 transition-all rounded-lg text-label-sm font-bold flex items-center gap-1 select-none outline-none">
                             <span class="material-symbols-outlined text-sm">restart_alt</span>
-                            <span>Reset Whitelist</span>
+                            <span>Reset contacts</span>
                         </button>
                         <span id="acl-count-badge" class="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full text-label-sm font-bold">0 Contacts</span>
                     </div>
@@ -1765,7 +1765,10 @@
         }
     }
 
-    window.showConfirmModal = function(title, message, confirmText = "Confirm", cancelText = "Cancel") {
+    window.showConfirmModal = function(title, message, options = {}) {
+        // Back-compat: legacy callers pass confirmText as a string
+        if (typeof options === 'string') options = { confirmText: options };
+        const { confirmText = "Confirm", cancelText = "Cancel", requireText = null } = options;
         return new Promise((resolve) => {
             let modal = document.getElementById('custom-confirm-modal');
             if (!modal) {
@@ -1788,19 +1791,33 @@
                         <span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings:'FILL' 1">warning</span>
                         <h3 id="confirm-title" class="font-bold text-lg text-on-surface">${title}</h3>
                     </div>
-                    <p id="confirm-message" class="text-sm text-on-surface-variant text-center leading-relaxed mb-6">${message}</p>
+                    <p id="confirm-message" class="text-sm text-on-surface-variant text-center leading-relaxed mb-6 whitespace-pre-line">${message}</p>
+                    ${requireText ? `<input type="text" id="confirm-typed" aria-label="Type ${requireText} to confirm" placeholder="Type ${requireText} to confirm" class="w-full px-3 py-2 mb-5 text-sm border border-outline-variant rounded-lg focus:outline-none focus:border-error text-center font-mono" autocomplete="off" />` : ''}
                     <div class="flex items-center justify-center gap-4">
                         <button type="button" id="confirm-cancel-btn" class="px-5 py-2.5 text-xs font-semibold rounded-lg text-on-surface hover:bg-surface-container transition-colors border border-outline-variant">${cancelText}</button>
                         <button type="button" id="confirm-ok-btn" class="px-5 py-2.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors">${confirmText}</button>
                     </div>
                 </div>
             `;
-            
+
             modal.style.display = 'flex';
-            
+
             const cancelBtn = modal.querySelector('#confirm-cancel-btn');
             const okBtn = modal.querySelector('#confirm-ok-btn');
-            
+            const typedInput = modal.querySelector('#confirm-typed');
+
+            // requireText gate: confirm stays disabled until exact match
+            if (typedInput && requireText) {
+                okBtn.disabled = true;
+                okBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                typedInput.addEventListener('input', () => {
+                    const match = typedInput.value.trim() === requireText;
+                    okBtn.disabled = !match;
+                    okBtn.classList.toggle('opacity-50', !match);
+                    okBtn.classList.toggle('cursor-not-allowed', !match);
+                });
+            }
+
             const closeConfirm = (result) => {
                 modal.style.display = 'none';
                 document.removeEventListener('keydown', onEscape);
@@ -2838,11 +2855,14 @@
     }
 
     window.handleResetWhitelist = async function() {
-        const confirmed = await window.showConfirmModal(
-            "Reset Whitelist",
-            "Are you sure you want to remove all whitelisted contacts? This cannot be undone."
+        // Typed confirmation — destructive, irreversible bulk action
+        const CONFIRM_WORD = 'RESET';
+        const typed = await window.showConfirmModal(
+            "Reset contacts",
+            "This removes EVERY contact's permission to talk to your bot. This cannot be undone.\n\nType RESET to confirm.",
+            { requireText: CONFIRM_WORD }
         );
-        if (!confirmed) return;
+        if (!typed) return;
         try {
             const resp = await fetch('/permissions/reset', { method: 'POST' });
             if (resp.ok) {
