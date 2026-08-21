@@ -336,6 +336,16 @@
             background: rgba(15, 23, 42, 0.16);
         }
     </style>
+    <!-- Static-analysis shim: Tailwind CDN compiles at runtime, so static
+         tools (impeccable detector) can't see utility padding. Declare the
+        spacing utilities actually used by glass-panels/cards here. -->
+    <style>
+        .p-5 { padding: 1.25rem; }
+        .p-6 { padding: 1.5rem; }
+        .p-8 { padding: 2rem; }
+        .px-8 { padding-left: 2rem; padding-right: 2rem; }
+        .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    </style>
 </head>
 <body class="min-h-screen text-on-surface">
 <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:z-[10000] focus:top-4 focus:left-4 focus:px-4 focus:py-2 focus:rounded-full focus:bg-white focus:text-on-surface focus:shadow-lg">Skip to main content</a>
