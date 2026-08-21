@@ -1,23 +1,40 @@
-# omniWA — Current Architecture (v2.1)
+# omniWA — Current Architecture (v3.0)
 
 ## System Status
 
-**Last Updated**: 2026-06-15  
-**Deployment**: Docker Compose (8 containers, all healthy and active)  
-**Domain**: https://api.narendar.tech (Fully routed via Cloudflare Tunnel container)  
+**Last Updated**: 2026-08-21  
+**Deployment**: Docker Compose (5 services: postgres, redis, hermes, backend, tunnel)  
+**Domain**: https://api.narendar.tech (Cloudflare tunnel, profile-gated; requires TUNNEL_TOKEN in docker/.env)  
 **Queue**: In-memory per-chat async queue with Redis-backed sliding-window rate limiting  
-**DB**: PostgreSQL (users, events, reminders, audit logs, preferences, ACLs)
+**DB**: PostgreSQL (tenants, dashboard_users, customer_google_tokens, users, events, reminders, audit logs, preferences, ACLs)  
+**Auth**: Multi-tenant — argon2 dashboard login, Redis sessions (instant revoke), per-tenant Google token isolation
 
 ---
 
 ## Architecture Overview
 
 ```
-WhatsApp User → Evolution API (2785) 
+WhatsApp User
                     ↓
-              Webhook Receiver (8000)
+    Hermes Native Baileys Bridge (8642)
+    [config gate: dm_policy=allowlist + require_mention]
                     ↓
-          [Signature Check + Idempotency Filter]
+    omniWA Thin Inbound Layer (8000)
+    [rate-limit 20/min + per-chat queue + permission cascade]
+    · owner/authorized → run
+    · stranger → hold → owner approves via <CODE> yes
+                    ↓
+    dispatch_to_hermes (X-Hermes-Session-Id = chat target)
+                    ↓
+    Hermes Brain — N tenant profiles, native tools
+    [Calendar, Drive, Docs, Sheets, Gmail, web; provider fallback chain]
+                    ↓
+    Reply delivered by Hermes bridge directly
+```
+
+**Multi-tenancy**: one Hermes process, one profile per tenant. Google tokens live encrypted in Postgres (`customer_google_tokens`), never as a shared file — prevents cross-tenant Workspace leaks.
+
+**Dropped vs v2.1**: Evolution API/openwa, LiteLLM, MCP server, whisper, kokoro (see ADR-0007).
                     ↓
           [Sliding-Window Rate Limiting (Redis)]
                     ↓
@@ -32,14 +49,6 @@ WhatsApp User → Evolution API (2785)
           [WhatsApp Quoted Reply Context Parser]
                     ↓
           [Sequential Dispatch to Hermes Brain]
-                    ↓
-    Hermes Agent (8642) + MCP Server (9000)
-                    ↓
-       [Tools: Calendar, Drive, Docs, Sheets, Gmail, HTTP]
-                    ↓
-          LiteLLM Router (4000)
-                    ↓
-     [Model Fallback Chain: GitHub → Gemini → Groq → OpenRouter → NIM]
 ```
 
 ---
@@ -47,23 +56,24 @@ WhatsApp User → Evolution API (2785)
 ## Key Files & Structure
 
 ### Core backend API Files:
-- [webhooks.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/webhooks.py) — Webhook orchestrator handling signatures, idempotency, rate limiting, sequential queuing workers, WhatsApp quoted reply context parsing, and `/webhook/agent` / `/webhook/agent-qr` callback routing.
-- [setup.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/setup.py) — Configures system-status host metrics (Windows compatible), onboarding screens, default preference queries, time string validation, admin authentication views (`/login`, `/logout`), agent setup cancellation, and agent session connection status retrieval.
+- [webhooks.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/webhooks.py) — Inbound orchestrator: rate limiting, sequential queuing workers, permission cascade, quoted-reply context parsing.
+- [setup.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/setup.py) — Multi-tenant login (`dashboard_users` + argon2), tenant-aware Google connection status, system-status host metrics, onboarding screens, preferences.
+- [core/auth.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/core/auth.py) — Redis-backed tenant-scoped dashboard sessions (instant revocation).
 - [permissions.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/permissions.py) — Secured router executing concurrent whatsapp contact name lookups, 1+ character autocomplete contact search, and on-demand contact synchronization.
-- [oauth.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/oauth.py) — Handles calendar linking, securing authorize/start endpoints, and returning themed HTML error responses on state expiry.
-- [whatsapp_service.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/services/whatsapp_service.py) — Handles basic WhatsApp message operations and integrates routing for outgoing agent replies in `dual_number` mode.
-- [test_endpoints.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/tests/test_endpoints.py) — Automated integration tests covering security, rate limits, logins, webhook message parsing, and whitelist resets.
+- [oauth.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/oauth.py) — One-click "Connect Google" flow: PKCE + tenant_id in Redis state, callback writes encrypted `CustomerGoogleToken`.
+- [services/permission_service.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/services/permission_service.py) — The moat: `decide()` cascade (owner runs / authorized runs / stranger held + owner approval) and action-level PendingDecision approvals.
 
 ---
 
 ## Permission System & Authentication
 
 ### Security Credentials:
-1. **Admin Console Authentication**: Accessing `/dashboard`, `/setup`, or any admin REST routes (`/api/*`, `/permissions/*`, `/oauth/start`, `/oauth/authorize`) requires a valid `naru_session` session cookie. This cookie matches an active authenticated session stored inside Redis, generated via a credential check against `ADMIN_PASSWORD` on `/login`.
-2. **Access Control Lists (ACL)**:
-   - **Owner** (`is_owner=true`): Whitelists contacts, modifies Preferences, and links Google.
+1. **Dashboard Authentication (multi-tenant)**: Accessing `/dashboard`, `/setup`, or admin REST routes requires a valid `omniwa_session` cookie. Login posts email + password against `dashboard_users` (argon2id hashes); a successful login stores `tenant_id:dashboard_user_id` in Redis under `dash_session:{sid}` (TTL 24h). Logout deletes the key — instant revocation. Legacy `ADMIN_PASSWORD` + `naru_session` remains as fallback only while no dashboard users exist.
+2. **Tenant isolation**: every dashboard query resolves the tenant via the session (`core/auth.get_principal`) and filters by `tenant_id`. Google tokens are encrypted per row (`customer_google_tokens`).
+3. **Access Control Lists (WhatsApp side)**:
+   - **Owner** (`is_owner=true`): Approves contacts, modifies Preferences, links Google.
    - **Authorized User** (`has_permission=true`): Granted access rights by the owner. Can chat in DMs and trigger mentions in groups.
-   - **Pending User** (`has_permission=false`): Dropped silently at the webhook layer (unless requesting OAuth setup status).
+   - **Stranger** (`has_permission=false`): Message is **held** — PendingDecision created, owner receives an approval prompt; stranger sees "forwarded to owner" reply. Owner approves by replying `<CODE> yes`.
 
 ---
 
