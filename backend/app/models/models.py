@@ -23,6 +23,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)  # NULL = legacy single-tenant rows
     wa_phone: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(128))
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata")
@@ -191,5 +192,62 @@ class ApiKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Tenant(Base):
+    """A business customer of omniWA. One tenant = one WhatsApp number + dashboard + token namespace."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)  # Hermes profile key
+    whatsapp_session_ref: Mapped[str | None] = mapped_column(String(128))  # Hermes wa session/profile ref
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DashboardUser(Base):
+    """Human who logs into the web dashboard (per-tenant). argon2 password hash."""
+
+    __tablename__ = "dashboard_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_tenant_email"),)
+
+
+class CustomerGoogleToken(Base):
+    """Per-customer Google OAuth tokens — encrypted at rest, tenant-scoped.
+
+    omniWA owns these credentials; Hermes never holds a shared global token
+    (prevents the cross-tenant Workspace leak).
+    """
+
+    __tablename__ = "customer_google_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_wa_phone: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    owner_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"))
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token_enc: Mapped[str | None] = mapped_column(Text)
+    token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[str | None] = mapped_column(Text)  # space-joined granted scopes
+    email: Mapped[str | None] = mapped_column(String(255))  # Google account email
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "user_wa_phone", name="uq_tenant_phone_token"),
+        Index("idx_cgt_tenant_phone", "tenant_id", "user_wa_phone"),
     )
 
