@@ -452,6 +452,30 @@
 <main id="main-content" class="md:pl-64 pt-16 pb-20 md:pb-0 min-h-screen flex flex-col" tabindex="-1">
     <div class="max-w-container-max w-full mx-auto px-margin-mobile md:px-margin-desktop py-gutter flex-grow space-y-gutter">
 
+        <!-- ==================== CONNECT GOOGLE CARD (one-click OAuth) ==================== -->
+        <div id="google-connection-card" class="glass-panel p-6 rounded-xl animate-fade-in-up">
+            <div class="flex items-center justify-between gap-4 flex-wrap">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+                        <span class="material-symbols-outlined text-2xl" style="font-variation-settings: 'FILL' 1;">event_available</span>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-on-surface">Connect Google</h3>
+                        <p class="text-sm text-on-surface-variant">Let your assistant use Calendar, Gmail &amp; Drive — one click.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="google-status-chip" class="hidden text-xs font-bold px-2.5 py-1 rounded"></span>
+                    <a href="/oauth/authorize"
+                       id="btn-connect-google"
+                       class="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-bold text-sm shadow hover:brightness-110 active:scale-95 transition-all select-none outline-none">
+                        <span class="material-symbols-outlined text-base">link</span>
+                        Connect Google
+                    </a>
+                </div>
+            </div>
+        </div>
+
         <!-- ==================== TAB: WHATSAPP CONNECTION ==================== -->
         <div id="tab-whatsapp" class="tab-content hidden space-y-gutter animate-fade-in-up">
             
@@ -3055,14 +3079,13 @@
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
 
-        // Check target dimensions and types
         const isSidebar = targetElement.id === 'tutorial-step-sidebar';
-        const isTall = rect.height > (viewportHeight * 0.6) || targetElement.id.startsWith('tab-');
+        const isTall = rect.height > 220;
 
         if (isSidebar) {
             // Place on the right side of the sidebar, centered vertically in the viewport
             card.style.position = 'fixed';
-            card.style.left = `${rect.right + 24}px`;
+            card.style.left = `${rect.right + 20}px`;
             card.style.top = `${Math.max(80, (viewportHeight / 2) - (cardHeight / 2))}px`;
             
             if (arrow) {
@@ -3072,24 +3095,61 @@
             return;
         }
 
-        if (isTall) {
-            // For full tab panels or huge containers, place card as fixed bottom-right to avoid occlusion
-            card.style.position = 'fixed';
-            card.style.right = '2rem';
-            card.style.bottom = '2rem';
-            
-            // Re-center on small screens
-            if (viewportWidth < 768) {
-                card.style.right = '';
-                card.style.left = '50%';
-                card.style.transform = 'translate(-50%, 0)';
-                card.style.bottom = '1.5rem';
+        // For tall columns/sections (like Agent Identity form or Quiet Hours column) that are not full-width:
+        // Position them side-by-side to target (left or right side) to prevent overlapping and clipping.
+        if (isTall && rect.width < (viewportWidth * 0.6)) {
+            const isLeftHalf = (rect.left + rect.width / 2) < (viewportWidth / 2);
+            let canPlaceSide = false;
+            let left = 0;
+
+            if (isLeftHalf) {
+                left = rect.right + 14;
+                if (left + cardWidth <= viewportWidth - 12) {
+                    canPlaceSide = true;
+                }
+            } else {
+                left = rect.left - cardWidth - 14;
+                if (left >= 12) {
+                    canPlaceSide = true;
+                }
             }
+
+            if (canPlaceSide) {
+                let top = rect.top + window.scrollY;
+                // Keep card inside vertical viewport bounds
+                if (top - window.scrollY + cardHeight > viewportHeight - 12) {
+                    top = window.scrollY + viewportHeight - cardHeight - 12;
+                }
+                if (top - window.scrollY < 12) {
+                    top = window.scrollY + 12;
+                }
+
+                card.style.left = `${left}px`;
+                card.style.top = `${top}px`;
+
+                if (arrow) {
+                    arrow.style.display = 'block';
+                    if (isLeftHalf) {
+                        arrow.className = "absolute -left-2 top-6 w-4 h-4 bg-white rotate-45 border-b border-l border-emerald-500/20";
+                    } else {
+                        arrow.className = "absolute -right-2 top-6 w-4 h-4 bg-white rotate-45 border-t border-r border-emerald-500/20";
+                    }
+                }
+                return;
+            }
+        }
+
+        // Fallback for wide centered elements (like the centered Welcome splash panel or QR slide dialog modal):
+        // Render tour tooltip card as a fixed overlay at the bottom center of the screen so it never occludes modal buttons.
+        if (isTall && rect.width >= (viewportWidth * 0.6)) {
+            card.style.position = 'fixed';
+            card.style.left = '50%';
+            card.style.transform = 'translate(-50%, 0)';
+            card.style.bottom = '1.5rem';
             return;
         }
 
-        // Standard positioning for smaller components
-        // Default: Place card below the target element with a gap
+        // Standard above/below positioning for smaller targets
         let top = rect.bottom + window.scrollY + 14;
         let left = rect.left + window.scrollX + (rect.width / 2) - (cardWidth / 2);
         let placement = 'bottom';
@@ -3136,6 +3196,21 @@
         // Switch active tab if required
         showTab(step.tab);
 
+        // Resolve element ID dynamically for WhatsApp tab to highlight specific sub-panels
+        let elementId = step.elementId;
+        if (elementId === 'tab-whatsapp') {
+            const unconnected = document.getElementById('wa-unconnected-panel');
+            const qrSlide = document.getElementById('wa-qr-slide');
+            const connected = document.getElementById('wa-connected-panel');
+            if (connected && !connected.classList.contains('hidden')) {
+                elementId = 'wa-connected-panel';
+            } else if (qrSlide && !qrSlide.classList.contains('hidden')) {
+                elementId = 'wa-qr-slide';
+            } else if (unconnected && !unconnected.classList.contains('hidden')) {
+                elementId = 'wa-unconnected-panel';
+            }
+        }
+
         // Update modal info
         document.getElementById('tutorial-title').innerText = step.title;
         document.getElementById('tutorial-text').innerText = step.text;
@@ -3161,15 +3236,12 @@
 
         // Apply spotlight and position the tooltip card dynamically
         setTimeout(() => {
-            const target = document.getElementById(step.elementId);
+            const target = document.getElementById(elementId);
             if (target) {
                 target.classList.add('spotlight-active');
-                // Scroll target into view with margin
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Let scrolling settle before positioning card
-                setTimeout(() => {
-                    positionTutorialCard(target);
-                }, 100);
+                // Scroll target into view instantly to avoid async browser lag / scroll race conditions
+                target.scrollIntoView({ behavior: 'auto', block: 'center' });
+                positionTutorialCard(target);
             } else {
                 positionTutorialCard(null);
             }
@@ -3942,7 +4014,39 @@
             showToast('Network error deleting key: ' + e.message, 'error');
         }
     };
+</script>
 
+<script>
+    // ===== Connect Google card: live tenant-scoped connection status =====
+    (async function initGoogleConnectionCard() {
+        const card = document.getElementById('google-connection-card');
+        const chip = document.getElementById('google-status-chip');
+        const btn = document.getElementById('btn-connect-google');
+        if (!card || !chip || !btn) return;
+
+        function markConnected(email) {
+            card.classList.add('google-connected');
+            chip.textContent = email ? ('Connected \u00b7 ' + email) : 'Connected';
+            chip.className = 'text-xs font-bold px-2.5 py-1 rounded bg-green-100 text-green-700 border border-green-200';
+            chip.classList.remove('hidden');
+            btn.classList.add('hidden');
+        }
+
+        try {
+            const resp = await fetch('/api/google-connection-status');
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.connected) markConnected(data.email);
+            }
+        } catch (e) { console.error('Google status check failed:', e); }
+
+        // Post-OAuth return: /dashboard?google_success=true
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('google_success') === 'true') {
+            markConnected(null);
+            if (typeof showToast === 'function') showToast('\u2705 Google connected successfully!', 'success');
+        }
+    })();
 </script>
 </body>
 </html>
