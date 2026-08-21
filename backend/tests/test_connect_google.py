@@ -445,3 +445,50 @@ def test_dashboard_plain_language_copy():
         "12-option flat provider list needs <optgroup> grouping "
         "(AI models vs integrations)"
     )
+
+
+def test_dashboard_mobile_nav_parity():
+    """F10a (impeccable): mobile bottom nav must expose the same sections as
+    the desktop sidebar — Soul was silently missing on phones."""
+    import re
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    mobile_nav = re.search(r'<nav[^>]*aria-label="Dashboard sections mobile".*?</nav>', html, re.S)
+    assert mobile_nav, "mobile bottom nav not found"
+    nav_html = mobile_nav.group(0)
+
+    desktop_nav = re.search(r'<aside[^>]*id="tutorial-step-sidebar".*?</aside>', html, re.S)
+    assert desktop_nav, "desktop sidebar not found"
+    side_html = desktop_nav.group(0)
+
+    def tabs_in(fragment, prefix):
+        return set(re.findall(rf"{prefix}-([a-z]+)'?\)", fragment))
+
+    # Compare section targets between mobile and desktop
+    desktop_tabs = {t for t in tabs_in(side_html, "showTab\\('") if f"side-btn-{t}" in side_html}
+    mobile_tabs = {t for t in tabs_in(nav_html, "showTab\\('") if f"mobile-btn-{t}" in nav_html}
+    missing = desktop_tabs - mobile_tabs - {"home"}  # 'home' may be desktop-only affordance
+    assert not missing, f"Mobile nav is missing sections present on desktop: {missing}"
+
+    assert "mobile-btn-soul" in nav_html, "Soul/Personality section invisible on mobile"
+
+
+def test_dashboard_tab_deep_linking():
+    """F10b (impeccable): tab state must survive refresh/share — showTab writes
+    location.hash and page load reads it back."""
+    import re
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    assert "history.replaceState" in html or "location.hash = " in html.replace("location.hash =", "location.hash ="), (
+        "showTab must persist the active tab to the URL hash"
+    )
+    # On load: read hash back into showTab
+    init_m = re.search(r"(?:DOMContentLoaded|window\.onload)[^}]{0,400}", html, re.S) or re.search(r"\(async function initDashboard[\s\S]{0,600}", html)
+    load_code = html[-3000:]
+    assert ("location.hash" in load_code or "URLSearchParams" in load_code), (
+        "page load must restore the tab from location.hash"
+    )

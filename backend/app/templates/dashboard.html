@@ -1530,6 +1530,10 @@
         <span class="material-symbols-outlined text-xl">memory</span>
         <span class="text-[10px] font-medium mt-0.5">Resources</span>
     </button>
+    <button onclick="showTab('soul')" id="mobile-btn-soul" class="flex flex-col items-center justify-center flex-1 py-1 text-secondary hover:text-primary transition-all">
+        <span class="material-symbols-outlined text-xl">psychology</span>
+        <span class="text-[10px] font-medium mt-0.5">Personality</span>
+    </button>
 </nav>
 
 <script>
@@ -1625,7 +1629,20 @@
         if (tabName === 'soul') {
             loadAgentSoul();
         }
+
+        // Deep-link: persist active tab so refresh/share restores it
+        try { history.replaceState(null, '', '#' + tabName); } catch (e) {}
     }
+
+    // Restore tab from URL hash on first load (deep-link support)
+    (function restoreTabFromHash() {
+        const initial = (location.hash || '').replace('#', '');
+        if (initial && allTabs.includes(initial)) {
+            // Defer until DOM + handlers are ready
+            document.addEventListener('DOMContentLoaded', () => showTab(initial));
+            if (document.readyState !== 'loading') showTab(initial);
+        }
+    })();
 
     // Handshake Splash Screen slide transition
     function transitionToQRSlide() {
