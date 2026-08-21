@@ -263,3 +263,24 @@ docker compose -f docker/docker-compose.yml exec -T backend python -m pytest -x 
 ## 📝 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+## Post-migration quickstart (v3.0)
+
+```bash
+# 1. Core stack (postgres, redis, hermes, backend)
+cd docker && docker compose up -d
+
+# 2. Public URL (optional): put TUNNEL_TOKEN=*** in docker/.env first
+docker compose --profile public up -d
+
+# 3. Seed your dashboard owner (multi-tenant login)
+cd ../backend
+python -m scripts.seed_owner --email you@yourbiz.com --password 'a-strong-password'
+#    (inside the container: docker cp + python -m scripts.seed_owner ...)
+
+# 4. Log in at http://localhost:8000/login → Connect Google → approve contacts
+```
+
+Stack: **5 services** (postgres, redis, hermes, backend, tunnel). WhatsApp transport is Hermes' native Baileys bridge; omniWA handles auth, the permission cascade (stranger asks → owner approves via `<CODE> yes`), and encrypted per-tenant Google tokens. See `docs/adr/0007-hermes-native-transport-and-tools.md` and `.impeccable/critique/BACKLOG-layout-debt.md`.
