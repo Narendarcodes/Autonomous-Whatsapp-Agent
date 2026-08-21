@@ -5,15 +5,16 @@ from fastapi import APIRouter, HTTPException, Response, Request, Depends, Form, 
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, field_validator
 import re
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.auth import SESSION_COOKIE
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import cache_get, cache_set
 from app.core.logging import get_logger
 from app.services.whatsapp_service import INSTANCE_NAME, whatsapp_service, normalize_phone_number, validate_phone_number
-from app.models.models import User, AuditLog, ApiKey
+from app.models.models import User, AuditLog, ApiKey, CustomerGoogleToken
 from app.core.security import decrypt_token
 from app.services.preferences_service import preferences_service
 from app.services.oauth_service import build_authorization_url
@@ -25,13 +26,21 @@ logger = get_logger(__name__)
 
 
 async def is_authenticated(request: Request) -> bool:
-    if not settings.ADMIN_PASSWORD:
-        return True
-    session_id = request.cookies.get("naru_session")
-    if not session_id:
-        return False
-    val = await cache_get(f"session:{session_id}")
-    return val == "1"
+    """Valid session cookie → authenticated. Falls back to legacy ADMIN_PASSWORD
+    single-user mode only while no DashboardUser rows exist (migration window)."""
+    sid = request.cookies.get(SESSION_COOKIE)
+    if sid:
+        val = await cache_get(f"dash_session:{sid}")
+        if val and ":" in val:
+            return True
+    # Legacy fallback (pre-multi-tenant deployments)
+    if settings.ADMIN_PASSWORD:
+        legacy = request.cookies.get("naru_session")
+        if legacy:
+            lval = await cache_get(f"session:{legacy}")
+            if lval == "1":
+                return True
+    return False
 
 
 async def verify_api_admin(request: Request):
@@ -50,22 +59,68 @@ async def login_page(request: Request) -> Response:
 
 
 @router.post("/login")
-async def login_submit(password: str = Form(...)) -> Response:
-    if password == settings.ADMIN_PASSWORD:
-        session_id = str(uuid.uuid4())
-        await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
-        response = RedirectResponse(url="/dashboard", status_code=303)
-        response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
-        return response
+async def login_submit(
+    request: Request,
+    password: str = Form(...),
+    email: str = Form(""),
+) -> Response:
+    """Multi-tenant login: email + password against dashboard_users (argon2).
+
+    Falls back to legacy ADMIN_PASSWORD when no DashboardUser exists yet
+    or the table itself is missing (pre-migration DB).
+    """
+    from app.core.auth import create_session, set_session_cookie, SESSION_COOKIE
+    from app.core.security import verify_password, needs_rehash, hash_password
+    from app.models.models import DashboardUser
+
+    try:
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(select(DashboardUser).where(DashboardUser.email == email.strip().lower()))
+            dash_user = res.scalar_one_or_none()
+
+            if dash_user and verify_password(password, dash_user.password_hash):
+                if needs_rehash(dash_user.password_hash):
+                    dash_user.password_hash = hash_password(password)
+                    await db.commit()
+                sid = await create_session(dash_user.tenant_id, dash_user.id)
+                response = RedirectResponse(url="/dashboard", status_code=303)
+                set_session_cookie(response, sid)
+                return response
+    except Exception:
+        pass  # pre-migration DB — fall through to legacy admin password
+
+    # Legacy single-owner fallback (no dashboard users provisioned yet)
+    if not email and password == settings.ADMIN_PASSWORD:
+        try:
+            async with AsyncSessionLocal() as db:
+                count_res = await db.execute(select(func.count()).select_from(DashboardUser))
+                if (count_res.scalar() or 0) == 0:
+                    session_id = str(uuid.uuid4())
+                    await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
+                    response = RedirectResponse(url="/dashboard", status_code=303)
+                    response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
+                    return response
+        except Exception:
+            # Pre-migration DB (table missing) — allow legacy admin password
+            session_id = str(uuid.uuid4())
+            await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
+            response = RedirectResponse(url="/dashboard", status_code=303)
+            response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
+            return response
+
     return RedirectResponse(url="/login?error=true", status_code=303)
 
 
 @router.get("/logout")
 async def logout(request: Request) -> Response:
-    session_id = request.cookies.get("naru_session")
+    from app.core.auth import destroy_session, clear_session_cookie, SESSION_COOKIE
+
+    await destroy_session(request)          # instant Redis revoke
+    legacy = request.cookies.get("naru_session")
+    if legacy:
+        await cache_set(f"session:{legacy}", "", ttl_seconds=1)
     response = RedirectResponse(url="/login", status_code=302)
-    if session_id:
-        await cache_set(f"session:{session_id}", "", ttl_seconds=1)
+    clear_session_cookie(response)
     response.delete_cookie("naru_session")
     return response
 
@@ -351,6 +406,32 @@ async def google_status(dependencies=Depends(verify_api_admin)) -> dict:
         if not owner or owner.google_access_token_enc is None:
             return {"connected": False}
         return {"connected": True}
+
+
+@router.get("/api/google-connection-status")
+async def google_connection_status(request: Request) -> dict:
+    """Tenant-aware Google connection status for the dashboard Connect card.
+
+    Reads the tenant from the dashboard session; checks CustomerGoogleToken
+    (the multi-tenant source of truth), NOT the legacy owner User row.
+    """
+    from app.core.auth import get_principal
+
+    principal = await get_principal(request)  # 401 if no valid session
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(CustomerGoogleToken).where(
+                CustomerGoogleToken.tenant_id == principal.tenant_id
+            )
+        )
+        tok = result.scalars().first()
+        if tok is None:
+            return {"connected": False}
+        return {
+            "connected": True,
+            "email": tok.email,
+            "scopes": (tok.scopes or "").split(),
+        }
 
 
 @router.post("/setup/disconnect")

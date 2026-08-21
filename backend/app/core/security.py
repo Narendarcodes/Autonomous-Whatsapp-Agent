@@ -2,9 +2,35 @@
 import hashlib
 import hmac
 
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
+
+# OWASP-recommended argon2id. Multi-tenant: a leak is high-impact.
+_ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
+
+
+def hash_password(plain: str) -> str:
+    """argon2id hash for dashboard passwords."""
+    return _ph.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """Constant-time verify; returns False on any mismatch/corruption."""
+    try:
+        return _ph.verify(hashed, plain)
+    except (VerifyMismatchError, InvalidHashError, ValueError):
+        return False
+
+
+def needs_rehash(hashed: str) -> bool:
+    """True if the hash params are below current policy (upgrade on login)."""
+    try:
+        return _ph.check_needs_rehash(hashed)
+    except Exception:
+        return False
 
 
 def verify_openwa_signature(body: bytes, signature: str | None) -> bool:
