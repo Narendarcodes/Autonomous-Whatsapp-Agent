@@ -44,6 +44,7 @@ phonenumbers>=8.13.0   # Google libphonenumber — phone format, country code, n
 
 # ==================== SECURITY ====================
 cryptography>=42.0.5
+argon2-cffi>=23.1.0   # OWASP-recommended password hashing (dashboard users)
 
 # ==================== MCP (Tool Bridge for Hermes) ====================
 mcp[cli]>=1.6.0

@@ -1,4 +1,20 @@
-version: '3.8'  # Removed obsolete version field warning by updating to 3.8
+# ============================================================
+# omniWA — Simplified Stack (post-migration)
+#
+# DROPPED vs previous stack:
+#   - litellm        → Hermes native provider fallback chain
+#   - mcp-server     → Hermes native tools (ADR-0003 revised: T2)
+#   - openwa (Evolution API) → Hermes native Baileys bridge
+#   - whisper-api    → Hermes native transcription
+#   - kokoro-api     → Hermes native TTS
+#
+# KEPT (5): postgres, redis, hermes (brain + WhatsApp bridge),
+#           backend (auth/OAuth/cascade/dashboard), tunnel.
+#
+# Multi-tenant: one Hermes process serves N tenant profiles;
+# Google tokens live encrypted in Postgres (customer_google_tokens),
+# NEVER as a shared global token file.
+# ============================================================
 
 services:
   # ==================== POSTGRESQL DATABASE ====================
@@ -27,7 +43,7 @@ services:
     networks:
       - calendar_network
 
-  # ==================== REDIS CACHE ====================
+  # ==================== REDIS (sessions, OAuth state, rate-limit, QR, idempotency) ====================
   redis:
     image: redis:7-alpine
     container_name: whatsapp_calendar_redis
@@ -51,35 +67,11 @@ services:
     networks:
       - calendar_network
 
-  # ==================== LITELLM (Model Fallback Router) ====================
-  litellm:
-    image: ghcr.io/berriai/litellm:main-stable
-    container_name: whatsapp_litellm
-    restart: unless-stopped
-    env_file:
-      - ../backend/.env
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
-    volumes:
-      - ../backend/litellm_config.yaml:/app/config.yaml:ro
-    ports:
-      - "4000:4000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/readiness')"]
-      interval: 20s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    networks:
-      - calendar_network
-
-  # ==================== HERMES AGENT (AI Brain + Memory) ====================
+  # ==================== HERMES AGENT (brain + native WhatsApp bridge) ====================
   hermes:
     image: nousresearch/hermes-agent:latest
     container_name: whatsapp_hermes
     restart: unless-stopped
-    # Run in gateway mode (not TUI) so the OpenAI-compatible API server starts.
-    # API_SERVER_ENABLED=true activates the endpoint on port 8642.
-    # All messaging platforms are disabled in config.yaml — we use OpenWA instead.
     command: gateway
     stdin_open: true
     tty: true
@@ -89,15 +81,16 @@ services:
       API_SERVER_ENABLED: "true"
       API_SERVER_PORT: "8642"
       API_SERVER_HOST: "0.0.0.0"
-      OPENAI_BASE_URL: http://litellm:4000/v1
+      # NOTE: model routing is Hermes-native now (fallback_providers in
+      # /opt/data/config.yaml). LiteLLM is dropped.
+      # WhatsApp bridge policy gate (verified: whatsapp_common.py dm_policy/group_policy):
+      WHATSAPP_DM_POLICY: "allowlist"       # only approved senders reach the AI
+      WHATSAPP_GROUP_POLICY: "allowlist"
+      WHATSAPP_REQUIRE_MENTION: "true"      # @botname required in groups
     volumes:
       - hermes_data:/opt/data
-      - ../backend/hermes_config.yaml:/opt/data/config.yaml:ro
     ports:
       - "8642:8642"
-    depends_on:
-      litellm:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8642/health"]
       interval: 20s
@@ -107,102 +100,7 @@ services:
     networks:
       - calendar_network
 
-  # ==================== MCP SERVER (Tool Bridge for Hermes) ====================
-  mcp-server:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-      args:
-        PYTHON_VERSION: "3.11"
-    container_name: whatsapp_mcp_server
-    restart: unless-stopped
-    command: python -m app.mcp_server.main
-    env_file:
-      - ../backend/.env
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    ports:
-      - "9000:9000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - ../backend/app:/app/app:ro
-      - token_storage:/app/tokens
-    networks:
-      - calendar_network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/sse')"]
-      interval: 20s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-  # ==================== EVOLUTION API (WhatsApp Protocol Adapter) ====================
-  # Replaces openwa/openwa (which has no public Docker image).
-  # Evolution API is the most widely-used Baileys-based WhatsApp REST API.
-  # REST docs: https://doc.evolution-api.com/
-  openwa:
-    image: evoapicloud/evolution-api:v2.3.7
-    container_name: whatsapp_openwa
-    restart: unless-stopped
-    env_file:
-      - ../backend/.env
-    environment:
-      SERVER_PORT: "8080"
-      SERVER_URL: http://openwa:8080
-
-      AUTHENTICATION_TYPE: apikey
-
-      DATABASE_ENABLED: "true"
-      DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-calendaruser}:${POSTGRES_PASSWORD:-calendarpass}@postgres:5432/evolution_api
-
-      WEBHOOK_GLOBAL_ENABLED: "false"
-      WEBHOOK_EVENTS_MESSAGES_UPSERT: "true"
-      WEBHOOK_EVENTS_CONNECTION_UPDATE: "true"
-      WEBHOOK_EVENTS_QRCODE_UPDATED: "true"
-      WEBHOOK_EVENTS_SEND_MESSAGE: "true"
-
-      # Cache
-      CACHE_REDIS_ENABLED: "true"
-      CACHE_REDIS_URI: redis://:${REDIS_PASSWORD:-redispass}@redis:6379/1
-      CACHE_REDIS_PREFIX_KEY: evolution
-      CACHE_LOCAL_ENABLED: "false"
-
-      DEL_INSTANCE: "false"
-      QRCODE_LIMIT: "30"
-      QRCODE_COLOR: "#198754"
-
-      LOG_LEVEL: ERROR,WARN,DEBUG,INFO,LOG,VERBOSE,DARK,WEBHOOKS
-      LOG_COLOR: "true"
-
-    ports:
-      - "2785:8080"
-    volumes:
-      - evolution_data:/evolution/instances
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ | grep -q 'Evolution API' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    networks:
-      - calendar_network
-
-  # ==================== FASTAPI BACKEND (Webhook API) ====================
+  # ==================== FASTAPI BACKEND (auth + OAuth + cascade + dashboard) ====================
   backend:
     build:
       context: ../backend
@@ -219,13 +117,12 @@ services:
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      OPENWA_BASE_URL: http://openwa:8080
       HERMES_BASE_URL: http://hermes:8642
-      LITELLM_BASE_URL: http://litellm:4000
-
+      BASE_URL: ${BASE_URL:-https://api.narendar.tech}
+      # Replies delivered by Hermes' Baileys bridge (Evolution dropped):
+      HERMES_OWNS_WHATSAPP: "true"
     ports:
       - "8000:8000"
-
     depends_on:
       postgres:
         condition: service_healthy
@@ -233,23 +130,16 @@ services:
         condition: service_healthy
       hermes:
         condition: service_healthy
-
     volumes:
       - ../backend/app:/app/app:ro
       - ../backend/tests:/app/tests:ro
-      - ../backend/litellm_config.yaml:/app/litellm_config.yaml
-      - ../backend/hermes_config.yaml:/app/hermes_config.yaml:ro
       - token_storage:/app/tokens
       - logs:/app/logs
-      - //var/run/docker.sock:/var/run/docker.sock:ro
-      - hermes_data:/opt/hermes_data
-
+      - hermes_data:/opt/hermes_data   # legacy default-tenant dev sync only
     networks:
       - calendar_network
-
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -258,56 +148,18 @@ services:
       start_period: 40s
 
   # ==================== CLOUDFLARE TUNNEL ====================
+  # Requires your real tunnel token: put TUNNEL_TOKEN=eyJ... in docker/.env
+  # (get it from Cloudflare Zero Trust → Networks → Tunnels → your tunnel).
+  # Then: docker compose --profile public up -d
+  # Profile-gated so the core stack runs fine locally without it.
   tunnel:
     image: cloudflare/cloudflared:latest
     container_name: whatsapp_tunnel
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token eyJhIjoiM2NkZTcyZTZhODU2MjhkNTg3ZDU4OGJiN2Y2M2NkZDYiLCJ0IjoiYjM1OTBlNDctYTBiMC00YTBhLWJhMDgtOGZiNTFjNzU0ZjI0IiwicyI6IlpEWXpZVE5qWkRNdFkyUmpNaTAwTWpSaUxUZzJaR0l0TVRKbFltUm1aamRoTXpFMCJ9
+    profiles: ["public"]
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
     depends_on:
       - backend
-    networks:
-      - calendar_network
-
-  # ==================== LOCAL SPEECH-TO-TEXT (WhisperX / Faster-Whisper) ====================
-  whisper-api:
-    profiles: ["local-audio"]
-    image: fedirz/faster-whisper-server:latest-cuda
-    container_name: whatsapp_whisper_api
-    restart: unless-stopped
-    environment:
-      - WHISPER_MODEL=base
-      - WHISPER_DEVICE=auto
-    # To run local Whisper on GPU (CUDA), uncomment the block below:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    ports:
-      - "8001:8000"
-    networks:
-      - calendar_network
-
-  # ==================== LOCAL TEXT-TO-SPEECH (Kokoro-82M) ====================
-  kokoro-api:
-    profiles: ["local-audio"]
-    image: remsky/kokoro-fastapi:v0.1.0
-    container_name: whatsapp_kokoro_api
-    restart: unless-stopped
-    environment:
-      - DEVICE=auto
-    # To run local Kokoro on GPU (CUDA), uncomment the block below:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    ports:
-      - "8002:8000"
     networks:
       - calendar_network
 
@@ -332,11 +184,6 @@ volumes:
   hermes_data:
     driver: local
     name: whatsapp_hermes_data
-
-  evolution_data:
-    driver: local
-    name: whatsapp_evolution_data
-
 
 # ==================== NETWORKS ====================
 networks:
