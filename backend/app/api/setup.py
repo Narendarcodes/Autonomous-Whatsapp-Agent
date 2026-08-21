@@ -434,6 +434,38 @@ async def google_connection_status(request: Request) -> dict:
         }
 
 
+class ChangePasswordPayload(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/api/change-password")
+async def change_password(payload: ChangePasswordPayload, request: Request) -> dict:
+    """Rotate the authenticated dashboard user's password (argon2)."""
+    from app.core.auth import get_principal
+    from app.models.models import DashboardUser
+    from app.services.auth_service import update_password
+
+    principal = await get_principal(request)  # 401 without session
+    try:
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(
+                select(DashboardUser).where(DashboardUser.id == principal.dashboard_user_id)
+            )
+            user = res.scalar_one_or_none()
+            if not user:
+                raise HTTPException(status_code=401, detail="Account no longer exists")
+
+            ok = await update_password(db, user, payload.current_password, payload.new_password)
+            if not ok:
+                raise HTTPException(status_code=403, detail="Current password is incorrect")
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"status": "changed"}
+
+
 @router.post("/setup/disconnect")
 async def disconnect_whatsapp(dependencies=Depends(verify_api_admin)) -> dict:
     ok = await whatsapp_service.delete_instance()
