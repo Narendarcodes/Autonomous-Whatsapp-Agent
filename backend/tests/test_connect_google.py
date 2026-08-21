@@ -351,3 +351,35 @@ def test_dashboard_qr_expiry_offers_recovery():
     assert 'id="wa-qr-expired-hint"' in html, (
         "Add a wa-qr-expired-hint element with recovery instructions near the QR timer"
     )
+
+
+def test_dashboard_no_ai_slop_tells():
+    """F6 (impeccable detector): the four deterministic AI-slop tells must stay
+    out of the template — side-tab accent borders, bounce/elastic easing,
+    zero-offset dark glows."""
+    import re
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    # 1. No thick one-side accent borders (the #1 AI-generated-UI tell)
+    side_tabs = re.findall(r"border-(?:left|right):\s*4px\s+solid", html)
+    assert not side_tabs, f"side-tab accent borders found: {side_tabs}"
+
+    # 2. No bounce/elastic easing — real objects decelerate smoothly
+    bounces = re.findall(r"cubic-bezier\([^)]*1\.5[6-9][^)]*\)", html)
+    assert not bounces, f"bounce/elastic easing found: {bounces} (use ease-out-quart/expo)"
+
+    # 3. No zero-offset BLUR glows (decorative halos). Spread-only rings
+    #    (0 0 0 Npx — focus indicators) are legitimate and allowed.
+    #    Shadow grammar: offsetX offsetY blur spread? -> blur is the 3rd length.
+    glows = []
+    for shadow in re.findall(r"box-shadow:\s*([^;]+)", html):
+        for component in re.split(r",(?![^()]*\))", shadow):  # split top-level commas
+            lengths = re.findall(r"(-?\d+(?:\.\d+)?)px", component)
+            if len(lengths) >= 3:
+                x, y, blur = (float(lengths[0]), float(lengths[1]), float(lengths[2]))
+                if x == 0 and y == 0 and blur > 0:
+                    glows.append(component.strip()[:80])
+                    break
+    assert not glows, f"zero-offset blur glows found: {glows}"
