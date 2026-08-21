@@ -203,3 +203,74 @@ def test_dashboard_no_duplicate_static_ids(test_engine):
     ids = re.findall(r'id="([^"]+)"', static_html)
     dupes = {i: c for i, c in Counter(ids).items() if c > 1}
     assert not dupes, f"Duplicate static ids found: {dupes}"
+
+
+def _static_dom() -> str:
+    """Template with <script> blocks stripped (same rationale as F1)."""
+    import re
+    from pathlib import Path
+
+    tpl = Path(__file__).resolve().parents[1] / "app" / "templates" / "dashboard.html"
+    html = tpl.read_text(encoding="utf-8")
+    return re.sub(r"<script>.*?</script>", "", html, flags=re.S)
+
+
+def test_dashboard_icon_only_buttons_have_accessible_names():
+    """F2a (impeccable): icon-only buttons must carry aria-label so screen
+    readers announce intent, not 'button'."""
+    import re
+
+    dom = _static_dom()
+    failures = []
+    # Buttons whose visible content is only a material-symbols icon span
+    for m in re.finditer(r"<button\b([^>]*)>(.*?)</button>", dom, re.S):
+        attrs, inner = m.group(1), m.group(2)
+        text = re.sub(r"<[^>]+>", "", inner).strip()
+        if text:
+            continue  # has visible text
+        if "material-symbols-outlined" in inner or "qr" in inner.lower():
+            has_label = re.search(r'aria-label="[^"]+"', attrs) or re.search(r'aria-labelledby="[^"]+"', attrs)
+            if not has_label:
+                line = dom[: m.start()].count("\n") + 1
+                failures.append(f"L{line}: {inner.strip()[:60]}")
+    assert not failures, f"Icon-only buttons missing aria-label:\n" + "\n".join(failures)
+
+
+def test_dashboard_static_inputs_have_labels():
+    """F2b (impeccable): every static <input>/<select> needs a label via
+    for=, wrapping label, or aria-label."""
+    import re
+
+    dom = _static_dom()
+    failures = []
+    label_fors = set(re.findall(r'<label[^>]*\bfor="([^"]+)"', dom))
+    for m in re.finditer(r"<(input|select)\b([^>]*)/?>", dom):
+        tag, attrs = m.group(1), m.group(2)
+        idm = re.search(r'id="([^"]+)"', attrs)
+        if (
+            (not idm or idm.group(1) not in label_fors)
+            and "aria-label" not in attrs
+            and "aria-labelledby" not in attrs
+            and 'type="hidden"' not in attrs
+        ):
+            line = dom[: m.start()].count("\n") + 1
+            failures.append(f"L{line}: <{tag} {attrs.strip()[:70]}")
+    assert not failures, f"Inputs/selects without labels:\n" + "\n".join(failures)
+
+
+def test_dashboard_clickable_divs_are_interactive():
+    """F2c (impeccable): elements with onclick that aren't button/a/input need
+    role="button" + tabindex="0" to be keyboard-reachable."""
+    import re
+
+    dom = _static_dom()
+    failures = []
+    for m in re.finditer(r'<(div|span|h\d|p)\b([^>]+)>', dom):
+        tag, attrs = m.group(1), m.group(2)
+        if "onclick" not in attrs:
+            continue
+        if 'role="button"' in attrs or "tabindex" in attrs:
+            continue
+        line = dom[: m.start()].count("\n") + 1
+        failures.append(f"L{line}: <{tag} ...onclick")
+    assert not failures, f"Clickable non-interactive elements (add role=button + tabindex=0):\n" + "\n".join(failures)

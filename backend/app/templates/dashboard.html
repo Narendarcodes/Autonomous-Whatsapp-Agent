@@ -384,7 +384,7 @@
 <header class="w-full h-16 fixed top-0 z-40 bg-surface/80 backdrop-blur-md border-b border-outline-variant/30 flex justify-between items-center px-margin-mobile md:px-margin-desktop md:pl-72">
     <div class="flex items-center gap-4">
         <!-- Logo / Name -->
-        <h1 class="font-h3 text-h3 font-bold text-primary tracking-tight flex items-center gap-2.5 cursor-pointer" onclick="window.location.reload()">
+        <h1 class="font-h3 text-h3 font-bold text-primary tracking-tight flex items-center gap-2.5 cursor-pointer" onclick="window.location.reload()" role="button" tabindex="0" aria-label="omniWA home — reload dashboard">
             <img src="/logo.svg?v=5" alt="OmniWA Logo" class="w-8 h-8 object-contain" />
             <span>omniWA</span>
         </h1>
@@ -1245,7 +1245,7 @@
                 <div class="mb-4 px-8 pt-4">
                     <div class="relative">
                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 material-symbols-outlined text-sm">search</span>
-                        <input id="user-filter" oninput="filterUsersTable()" class="w-full max-w-xs pl-9 pr-4 py-2 text-xs border border-outline-variant rounded-lg focus:outline-none focus:border-secondary bg-white" placeholder="Filter whitelist..." type="text"/>
+                        <input id="user-filter" oninput="filterUsersTable()" aria-label="Filter contacts" class="w-full max-w-xs pl-9 pr-4 py-2 text-xs border border-outline-variant rounded-lg focus:outline-none focus:border-secondary bg-white" placeholder="Filter whitelist..." type="text"/>
                     </div>
                 </div>
 
@@ -1444,7 +1444,7 @@
                     </div>
                     <div class="flex items-center gap-3">
                         <label class="flex items-center gap-2 text-xs font-bold text-on-surface-variant cursor-pointer select-none">
-                            <input type="checkbox" id="checkbox-key-active" checked class="rounded text-primary focus:ring-primary border-outline-variant bg-white" />
+                            <input type="checkbox" id="checkbox-key-active" checked aria-label="Key active (enable in routing)" class="rounded text-primary focus:ring-primary border-outline-variant bg-white" />
                             <span>Active (Enable in routing)</span>
                         </label>
                     </div>
@@ -2112,7 +2112,7 @@
                         <span class="material-symbols-outlined text-secondary text-2xl" style="font-variation-settings:'FILL' 1">settings_input_component</span>
                         <h3 class="font-bold text-lg text-on-surface">Configure ${connectorName}</h3>
                     </div>
-                    <button id="connector-modal-close-btn" class="text-on-surface-variant hover:text-error transition-colors rounded-full w-8 h-8 flex items-center justify-center hover:bg-error/10">
+                    <button id="connector-modal-close-btn" aria-label="Close connector setup" class="text-on-surface-variant hover:text-error transition-colors rounded-full w-8 h-8 flex items-center justify-center hover:bg-error/10">
                         <span class="material-symbols-outlined text-xl">close</span>
                     </button>
                 </div>
@@ -3502,7 +3502,7 @@
                 const highlightedName = highlightMatch(c.name, query);
                 const highlightedPhone = highlightMatch(phoneDisplay, query);
                 return `
-                    <div class="suggestion-item font-normal text-sm" onclick="selectContactSuggestion('${c.phone}')">
+                    <div class="suggestion-item font-normal text-sm" role="button" tabindex="0" aria-label="Select contact suggestion ${highlightedName}" onclick="selectContactSuggestion('${c.phone}')">
                         <span class="material-symbols-outlined text-secondary text-base">${iconName}</span>
                         <div class="flex-grow text-left">
                             <p class="text-xs text-on-surface">${highlightedName}</p>
@@ -3625,7 +3625,7 @@
                 const highlightedName = highlightMatch(c.name, query);
                 const highlightedPhone = highlightMatch(`+${c.phone}`, query);
                 return `
-                    <div class="suggestion-item font-normal text-sm" onclick="selectAgentPhoneSuggestion('${c.phone}')">
+                    <div class="suggestion-item font-normal text-sm" role="button" tabindex="0" aria-label="Select agent phone suggestion ${highlightedName}" onclick="selectAgentPhoneSuggestion('${c.phone}')">
                         <span class="material-symbols-outlined text-secondary text-base">smartphone</span>
                         <div class="flex-grow text-left">
                             <p class="text-xs text-on-surface">${highlightedName}</p>
@@ -3728,7 +3728,7 @@
                         <span class="material-symbols-outlined text-secondary text-2xl" style="font-variation-settings:'FILL' 1">qr_code_scanner</span>
                         <h3 class="font-bold text-lg text-on-surface">Link Agent Number</h3>
                     </div>
-                    <button onclick="closeAgentQRModal()" class="text-on-surface-variant hover:text-error transition-colors rounded-full w-8 h-8 flex items-center justify-center hover:bg-error/10">
+                    <button onclick="closeAgentQRModal()" aria-label="Close agent QR setup" class="text-on-surface-variant hover:text-error transition-colors rounded-full w-8 h-8 flex items-center justify-center hover:bg-error/10">
                         <span class="material-symbols-outlined text-xl">close</span>
                     </button>
                 </div>
