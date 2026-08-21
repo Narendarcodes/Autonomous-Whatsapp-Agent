@@ -260,7 +260,30 @@ async def _chat_worker(chat_id: str, queue: asyncio.Queue):
                 # 3. Get or create user
                 async with AsyncSessionLocal() as db:
                     user = await _get_or_create_user(db, parsed["sender_phone"], display_name=parsed.get("push_name"))
-                    
+
+                    # 3.5 Message-level permission cascade (multi-tenant moat):
+                    # owner/authorized → run; stranger → hold + owner approval prompt.
+                    from app.services.permission_service import permission_service
+                    cascade = await permission_service.decide(
+                        db,
+                        parsed["sender_phone"],
+                        parsed["message_text"],
+                        tenant_id=getattr(user, "tenant_id", None),
+                        is_group=parsed["is_group"],
+                    )
+                    if cascade["action"] == "hold":
+                        code = cascade["decision"].short_code
+                        logger.info(
+                            "Held message %s from stranger %s (decision %s) — owner approval required",
+                            parsed["message_id"], parsed["sender_phone"], code,
+                        )
+                        await _send_reply(
+                            parsed,
+                            parsed["sender_phone"],
+                            f"🔒 Your request was forwarded to the owner for approval (ref: {code}).",
+                        )
+                        continue
+
                     bot_phone = parsed.get("bot_phone")
                     if not bot_phone:
                         bot_phone = await cache_get("whatsapp:bot_phone")

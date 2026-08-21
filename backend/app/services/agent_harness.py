@@ -121,7 +121,14 @@ async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: 
                 if choices:
                     content = choices[0].get("message", {}).get("content", "")
                     if content:
-                        if use_agent:
+                        if getattr(settings, "HERMES_OWNS_WHATSAPP", False):
+                            # Hermes' native Baileys bridge delivers the reply itself
+                            # (session-id = chat target). omniWA does NOT call Evolution.
+                            logger.info(
+                                "HERMES_OWNS_WHATSAPP=true — reply for session %s delivered by Hermes bridge",
+                                session_id,
+                            )
+                        elif use_agent:
                             from app.services.agent_instance_service import agent_instance_service
                             await agent_instance_service.send_via_agent(session_id, content)
                         else:
