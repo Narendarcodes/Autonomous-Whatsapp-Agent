@@ -307,3 +307,22 @@ def test_dashboard_destructive_actions_not_primary_styled():
             and re.search(r'CONFIRM_WORD\s*=\s*[\'"]RESET[\'"]', body_start))
     )
     assert typed_gate, "Reset contacts lacks typed confirmation (requireText 'RESET')"
+
+
+def test_dashboard_no_fake_identity_in_connected_state():
+    """F4 (impeccable): the connected-state panel must not ship hardcoded
+    placeholder identity ('Alex Thompson', '+1 (555) 012-3456'). If real data
+    loads slowly or fails, fake identity destroys trust at the worst moment.
+    Static markup must carry neutral placeholders; JS fills real values."""
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    for pattern in ("Alex Thompson", "555) 012-3456", "alex@"):
+        assert pattern not in html, (
+            f"Hardcoded placeholder identity {pattern!r} found in dashboard template"
+        )
+
+    # The connected-panel name/phone elements must exist for JS to populate
+    assert 'id="whatsapp-profile-name"' in html
+    assert 'id="whatsapp-profile-phone"' in html
