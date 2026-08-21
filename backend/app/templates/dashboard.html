@@ -515,7 +515,7 @@
                     <!-- Connection progress -->
                     <div class="w-full max-w-xs space-y-2">
                         <div class="flex justify-between text-[11px] font-bold text-on-surface-variant">
-                            <span id="wa-timeout-label">Handshake Active</span>
+                            <span id="wa-timeout-label">Waiting for scan</span>
                             <span id="wa-timeout-timer">03:00</span>
                         </div>
                         <div class="h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
@@ -796,15 +796,15 @@
         <!-- ==================== TAB: AGENT SOUL ==================== -->
         <div id="tab-soul" class="tab-content hidden space-y-gutter animate-fade-in-up">
             <div class="mb-6">
-                <h2 class="font-h1 text-h2 text-on-surface mb-2">Agent Soul (Personality)</h2>
+                <h2 class="font-h1 text-h2 text-on-surface mb-2">Personality</h2>
                 <p class="font-body-md text-on-surface-variant max-w-2xl">
-                    Configure your agent's core identity, philosophical guidelines, vibe, and behavioral boundaries using Markdown.
+                    Shape who your assistant is — its name, tone, and how it behaves. For advanced control you can edit the underlying Markdown (SOUL.md) directly.
                 </p>
             </div>
 
             <div class="glass-panel rounded-xl p-8 space-y-6">
                 <div class="space-y-2">
-                    <label class="font-label-md text-label-md text-on-surface-variant" for="textarea-soul">Markdown Personality Configuration (SOUL.md)</label>
+                    <label class="font-label-md text-label-md text-on-surface-variant" for="textarea-soul">Personality (advanced — SOUL.md Markdown)</label>
                     <textarea id="textarea-soul" rows="18" class="w-full p-4 rounded-lg border border-outline-variant focus:border-secondary focus:ring-4 focus:ring-secondary/10 outline-none transition-all font-mono text-sm bg-white" placeholder="# Agent Persona..."></textarea>
                     <p class="text-[12px] text-on-surface-variant/60">
                         This text forms the persistent, root identity prompt of the agent. Hermes loads this dynamically for every message. No container restart is required.
@@ -1211,7 +1211,7 @@
             <section id="tutorial-step-addcontact" class="glass-panel rounded-xl p-8 relative z-30">
                 <div class="flex flex-col md:flex-row md:items-end gap-4">
                     <div class="flex-grow space-y-2">
-                        <label class="font-label-md text-label-md text-on-surface-variant font-bold" for="phone-input">Whitelist Phone Number</label>
+                        <label class="font-label-md text-label-md text-on-surface-variant font-bold" for="phone-input">Add an approved contact</label>
                         <div class="flex items-center gap-2">
                             <div class="relative flex-grow">
                                 <span class="absolute left-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 material-symbols-outlined text-[20px]">add_call</span>
@@ -1226,7 +1226,7 @@
                     </div>
                     <button onclick="handleAddContact()" class="px-8 py-3 bg-primary text-white rounded-lg font-bold text-label-md shadow-md shadow-primary/10 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2 select-none outline-none">
                         <span class="material-symbols-outlined text-[18px]">person_add</span>
-                        <span>Whitelist Contact</span>
+                        <span>Approve contact</span>
                     </button>
                 </div>
             </section>
@@ -1234,7 +1234,7 @@
             <!-- Table Card -->
             <section id="tutorial-step-whitelist" class="glass-panel rounded-xl overflow-hidden">
                 <div class="px-8 py-6 border-b border-outline-variant/30 flex justify-between items-center bg-white/40">
-                    <h4 class="font-h3 text-label-md font-bold text-on-surface">Authorized Whitelist</h4>
+                    <h4 class="font-h3 text-label-md font-bold text-on-surface">Approved contacts</h4>
                     <div class="flex items-center gap-3">
                         <button onclick="handleResetWhitelist()" class="px-3 py-1.5 border border-error/30 text-error hover:bg-error/5 transition-all rounded-lg text-label-sm font-bold flex items-center gap-1 select-none outline-none">
                             <span class="material-symbols-outlined text-sm">restart_alt</span>
@@ -1425,18 +1425,22 @@
                         <div class="space-y-1">
                             <label class="text-xs font-bold text-on-surface-variant" for="select-key-provider">Provider</label>
                             <select class="w-full px-3 py-2 rounded-lg border border-outline-variant focus:border-secondary outline-none text-xs bg-white text-on-surface" id="select-key-provider">
-                                <option value="groq">Groq</option>
-                                <option value="openrouter">OpenRouter</option>
-                                <option value="gemini">Google Gemini / AI Studio</option>
-                                <option value="anthropic">Anthropic</option>
-                                <option value="github">GitHub Automator</option>
-                                <option value="postgres">Database Inspector</option>
-                                <option value="playwright">Playwright Scraper</option>
-                                <option value="home_assistant">Home Assistant Gateway</option>
-                                <option value="notion">Notion Workspace</option>
-                                <option value="obsidian">Obsidian Sync</option>
-                                <option value="outlook">Microsoft Graph / Outlook</option>
-                                <option value="android">Android Device Bridge</option>
+                                <optgroup label="AI models (chat brain)">
+                                    <option value="groq">Groq</option>
+                                    <option value="openrouter">OpenRouter</option>
+                                    <option value="gemini">Google Gemini / AI Studio</option>
+                                    <option value="anthropic">Anthropic</option>
+                                </optgroup>
+                                <optgroup label="Integrations & tools">
+                                    <option value="github">GitHub Automator</option>
+                                    <option value="postgres">Database Inspector</option>
+                                    <option value="playwright">Playwright Scraper</option>
+                                    <option value="home_assistant">Home Assistant Gateway</option>
+                                    <option value="notion">Notion Workspace</option>
+                                    <option value="obsidian">Obsidian Sync</option>
+                                    <option value="outlook">Microsoft Graph / Outlook</option>
+                                    <option value="android">Android Device Bridge</option>
+                                </optgroup>
                             </select>
                         </div>
                         <div class="space-y-1">
@@ -1646,7 +1650,7 @@
         const timerEl = document.getElementById('wa-timeout-timer');
         const labelEl = document.getElementById('wa-timeout-label');
         
-        if (labelEl) labelEl.innerText = "Handshake Active";
+        if (labelEl) labelEl.innerText = "Waiting for scan";
         const expiredHint = document.getElementById('wa-qr-expired-hint');
         if (expiredHint) expiredHint.classList.add('hidden');
 
@@ -1656,7 +1660,7 @@
                 countdownInterval = null;
                 if (timerEl) timerEl.innerText = "00:00";
                 if (progressEl) progressEl.style.width = "0%";
-                if (labelEl) labelEl.innerText = "Handshake Expired";
+                if (labelEl) labelEl.innerText = "QR expired";
                 // Recovery guidance: tell the user exactly what to do next
                 const hint = document.getElementById('wa-qr-expired-hint');
                 if (hint) hint.classList.remove('hidden');

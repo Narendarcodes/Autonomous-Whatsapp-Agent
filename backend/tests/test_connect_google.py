@@ -341,7 +341,7 @@ def test_dashboard_qr_expiry_offers_recovery():
     m = re.search(r'if\s*\(secondsLeft\s*<=\s*0\)\s*\{(.*?)return;', html, re.S)
     assert m, "QR countdown expiry branch not found"
     branch = m.group(1)
-    assert "Expired" in branch, "expiry branch should mark state as expired"
+    assert ("expired" in branch or "Expired" in branch), "expiry branch should mark state as expired"
     # It must surface recovery: either show an expiry hint element or trigger refresh
     assert ("wa-qr-expired-hint" in branch) or ("refreshQR()" in branch) or ("reconnectWhatsapp" in branch), (
         "QR expiry must guide recovery (hint element or auto-refresh call)"
@@ -413,3 +413,35 @@ def test_dashboard_single_primary_green():
     assert "#10b981" not in html, "legacy focus-ring green #10b981 — use #059669"
     assert "#00a884" not in html, "legacy accent green #00a884 — use rgba(5, 150, 105, a)"
     assert "rgba(0, 168, 132" not in html, "legacy accent rgb form — use rgba(5, 150, 105, a)"
+
+
+def test_dashboard_plain_language_copy():
+    """F9 (impeccable clarity finding): the audience is non-technical owners.
+    Dev jargon must be replaced by plain language in USER-VISIBLE copy."""
+    from pathlib import Path
+
+    html = Path(__file__).resolve().parents[1].joinpath("app", "templates", "dashboard.html").read_text(encoding="utf-8")
+
+    # Static markup only (script blocks excluded — internal ids/vars may keep names)
+    import re
+    dom = re.sub(r"<script>.*?</script>", "", html, flags=re.S)
+
+    banned_visible = [
+        "Whitelist Phone Number",       # -> Add an approved contact
+        "Whitelist Contact",            # -> Approve contact
+        "Authorized Whitelist",         # -> Approved contacts
+        "Agent Soul (Personality)",     # -> Personality
+        "Markdown Personality Configuration (SOUL.md)",
+        "Handshake Active",             # -> Waiting for scan
+    ]
+    for phrase in banned_visible:
+        assert phrase not in dom, f"Jargon in visible copy: {phrase!r}"
+
+    # Provider dropdown must group LLM providers apart from integrations
+    m = re.search(r'<select[^>]*id="select-key-provider".*?</select>', dom, re.S)
+    assert m, "provider select not found"
+    select_html = m.group(0)
+    assert "<optgroup" in select_html, (
+        "12-option flat provider list needs <optgroup> grouping "
+        "(AI models vs integrations)"
+    )
