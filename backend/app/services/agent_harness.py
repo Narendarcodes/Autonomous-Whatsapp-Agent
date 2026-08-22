@@ -86,6 +86,14 @@ async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: 
     else:
         final_system_prompt = omniwa_os_context
 
+    # Group Privacy Mode: when replying into a WhatsApp group, inject the hard
+    # privacy guardrail so the agent never exposes owner-sensitive data there.
+    from app.services.group_privacy_service import is_group_chat
+    in_group = is_group_chat(session_id)
+    if in_group:
+        from app.services.group_privacy_service import build_group_privacy_directive
+        final_system_prompt = f"{final_system_prompt}\n\n{build_group_privacy_directive()}"
+
     headers = {
         "Content-Type": "application/json",
         "X-Hermes-Session-Id": session_id,
@@ -121,6 +129,11 @@ async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: 
                 if choices:
                     content = choices[0].get("message", {}).get("content", "")
                     if content:
+                        # Defense-in-depth: scrub sensitive tokens from replies
+                        # bound for group chats (prompt guardrail may be bypassed).
+                        if in_group:
+                            from app.services.group_privacy_service import redact
+                            content = redact(content)
                         if getattr(settings, "HERMES_OWNS_WHATSAPP", False):
                             # Hermes' native Baileys bridge delivers the reply itself
                             # (session-id = chat target). omniWA does NOT call Evolution.
