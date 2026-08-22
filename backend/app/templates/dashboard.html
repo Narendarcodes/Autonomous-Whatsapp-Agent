@@ -1652,7 +1652,7 @@
     function transitionToQRSlide() {
         document.getElementById('wa-unconnected-panel').classList.add('hidden');
         document.getElementById('wa-qr-slide').classList.remove('hidden');
-        reconnectWhatsapp();
+        startHermesPairingPoller();
     }
 
     function goBackToSplash() {
@@ -1695,106 +1695,123 @@
         }, 1000);
     }
 
-    async function refreshQR() {
-        try {
-            const resp = await fetch('/setup/qr-status');
-            const data = await resp.json();
-            const holder = document.getElementById('qr-holder');
-            const headerPic = document.getElementById('header-profile-pic');
-            const headerPlaceholder = document.getElementById('header-profile-pic-placeholder');
-            
-            const unconnectedPanel = document.getElementById('wa-unconnected-panel');
-            const qrSlide = document.getElementById('wa-qr-slide');
-            const connectedPanel = document.getElementById('wa-connected-panel');
+    // ---- Hermes-native WhatsApp pairing (Baileys bridge via /api/pairing) ----
+    let hermesPairTimer = null;
+    let lastQrText = null;
+    const QR_REFRESH_MS = 15000;   // Baileys rotates QRs ~every 20s
 
-            // Set global header profile picture if provided
-            if (data.profile_pic) {
-                headerPic.src = data.profile_pic;
-                headerPic.classList.remove('hidden');
-                if (headerPlaceholder) headerPlaceholder.classList.add('hidden');
-            } else {
-                headerPic.classList.add('hidden');
-                if (headerPlaceholder) headerPlaceholder.classList.remove('hidden');
+    function renderHermesQr(qrText) {
+        const holder = document.getElementById('qr-holder');
+        if (!holder) return;
+        if (qrText === lastQrText) return;   // same code — don't re-render/flicker
+        lastQrText = qrText;
+        holder.innerHTML = '';
+        const pre = document.createElement('pre');
+        pre.style.cssText = [
+            'font-family:ui-monospace,SFMono-Regular,Menlo,monospace',
+            'font-size:6.2px', 'line-height:1.05', 'letter-spacing:0',
+            'margin:0', 'white-space:pre', 'text-align:center',
+        ].join(';');
+        pre.textContent = qrText;
+        holder.appendChild(pre);
+    }
+
+    async function pollHermesPairing() {
+        try {
+            const resp = await fetch('/api/pairing/status', { cache: 'no-store' });
+            if (!resp.ok) throw new Error('status ' + resp.status);
+            const state = await resp.json();
+
+            if (state.paired) {
+                stopHermesPairingPoller();
+                const qrSlide = document.getElementById('wa-qr-slide');
+                if (qrSlide && !qrSlide.classList.contains('hidden')) {
+                    showToast('WhatsApp linked successfully!', 'success');
+                    setTimeout(() => window.location.reload(), 1200);
+                }
+                return;
             }
 
-            if (data.state === 'open' || data.state === 'connected') {
-                // Connected state
-                unconnectedPanel.classList.add('hidden');
-                qrSlide.classList.add('hidden');
-                connectedPanel.classList.remove('hidden');
-
-                // Populate connected fields
-                document.getElementById('whatsapp-profile-name').innerText = data.instance || 'Active Bot';
-                document.getElementById('whatsapp-profile-phone').innerText = data.phone ? `+${data.phone}` : 'Connected Node';
-                
-                const profileImg = document.getElementById('whatsapp-profile-pic');
-                const profilePlaceholder = document.getElementById('whatsapp-profile-pic-placeholder');
-                
-                if (data.profile_pic) {
-                    profileImg.src = data.profile_pic;
-                    profileImg.classList.remove('hidden');
-                    profilePlaceholder.classList.add('hidden');
-                } else {
-                    profileImg.classList.add('hidden');
-                    profilePlaceholder.classList.remove('hidden');
-                }
-                
-                if (countdownInterval) {
-                    clearInterval(countdownInterval);
-                    countdownInterval = null;
+            if (state.qr_available) {
+                const qrResp = await fetch('/api/pairing/qr', { cache: 'no-store' });
+                if (qrResp.ok) {
+                    const data = await qrResp.json();
+                    renderHermesQr(data.qr);
+                    if (!countdownInterval) startQRTimer();
                 }
             } else {
-                // Disconnected / connecting state
-                connectedPanel.classList.add('hidden');
-                
-                if (data.has_qr) {
-                    unconnectedPanel.classList.add('hidden');
-                    qrSlide.classList.remove('hidden');
-                    holder.innerHTML = `<img src="/setup/qr-image?t=${Date.now()}" alt="Handshake QR Code" class="w-48 h-48 rounded-lg shadow border border-outline-variant/20 object-contain" />;`;
-                    
-                    // Auto-start timer if QR exists but countdown is inactive
-                    if (!countdownInterval) {
-                        startQRTimer();
-                    }
-                } else {
-                    // Stay on splash or show loading
-                    if (!qrSlide.classList.contains('hidden')) {
-                        holder.innerHTML = `
-                            <div class="flex flex-col items-center justify-center p-4">
-                                <span class="material-symbols-outlined text-3xl text-primary animate-pulse mb-2">hourglass_empty</span>
-                                <span class="text-xs text-on-surface-variant font-medium">Acquiring QR handshake...</span>
-                            </div>`;
-                    }
+                const holder = document.getElementById('qr-holder');
+                if (holder && !document.getElementById('wa-qr-slide').classList.contains('hidden')) {
+                    holder.innerHTML = `
+                        <div class="flex flex-col items-center justify-center p-4">
+                            <span class="material-symbols-outlined text-3xl text-primary animate-pulse mb-2">hourglass_empty</span>
+                            <span class="text-xs text-on-surface-variant font-medium">Waiting for the bridge to offer a QR…</span>
+                        </div>`;
                 }
             }
         } catch (e) {
+            console.error('Pairing status failed:', e);
+        }
+    }
+
+    function startHermesPairingPoller() {
+        stopHermesPairingPoller();
+        lastQrText = null;
+        pollHermesPairing();
+        hermesPairTimer = setInterval(pollHermesPairing, QR_REFRESH_MS);
+    }
+
+    function stopHermesPairingPoller() {
+        if (hermesPairTimer) { clearInterval(hermesPairTimer); hermesPairTimer = null; }
+        if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+    }
+
+    async function refreshQR() {
+        try {
+            const resp = await fetch('/api/pairing/status', { cache: 'no-store' });
+            if (!resp.ok) throw new Error('pairing status ' + resp.status);
+            const state = await resp.json();
             const holder = document.getElementById('qr-holder');
+
+            const unconnectedPanel = document.getElementById('wa-unconnected-panel');
             const qrSlide = document.getElementById('wa-qr-slide');
-            if (holder && qrSlide && !qrSlide.classList.contains('hidden')) {
-                holder.innerHTML = `
-                    <div class="state-message" data-tone="danger">
-                        <p class="font-semibold text-on-surface">Handshake status is temporarily unavailable.</p>
-                        <p class="text-sm text-on-surface-variant mt-1">Retry to check the connection again.</p>
-                        <button type="button" class="mt-4 px-4 py-2 rounded-lg bg-primary text-white text-xs font-semibold" onclick="reconnectWhatsapp()">Retry</button>
-                    </div>
-                `;
+            const connectedPanel = document.getElementById('wa-connected-panel');
+            const headerPlaceholder = document.getElementById('header-profile-pic-placeholder');
+
+            // Hermes bridge owns the profile now; keep header placeholder visible.
+            const headerPic = document.getElementById('header-profile-pic');
+            if (headerPic) headerPic.classList.add('hidden');
+            if (headerPlaceholder) headerPlaceholder.classList.remove('hidden');
+
+            if (state.paired) {
+                unconnectedPanel.classList.add('hidden');
+                qrSlide.classList.add('hidden');
+                connectedPanel.classList.remove('hidden');
+                stopHermesPairingPoller();
+
+                document.getElementById('whatsapp-profile-name').innerText =
+                    state.bot_number ? `+${state.bot_number}` : 'WhatsApp Linked';
+                document.getElementById('whatsapp-profile-phone').innerText =
+                    state.bot_number ? `+${state.bot_number} · Baileys bridge` : 'Native WhatsApp bridge';
+                document.getElementById('whatsapp-profile-pic').classList.add('hidden');
+                document.getElementById('whatsapp-profile-pic-placeholder').classList.remove('hidden');
+            } else {
+                connectedPanel.classList.add('hidden');
+                // Unpaired: show the QR slide with the live poller (auto-starts).
+                unconnectedPanel.classList.add('hidden');
+                qrSlide.classList.remove('hidden');
+                startHermesPairingPoller();
+                void holder;
             }
-            console.error('Handshake verification failed:', e);
+        } catch (e) {
+            console.error('Pairing verification failed:', e);
         }
     }
 
     async function reconnectWhatsapp() {
-        try {
-            const resp = await fetch('/setup/create-instance', { method: 'POST' });
-            if (resp.ok) {
-                startQRTimer();
-                await refreshQR();
-            } else {
-                showToast('Failed to generate a new handshake QR.', 'error');
-            }
-        } catch (e) {
-            showToast('Error generating handshake QR: ' + e.message, 'error');
-        }
+        // The gateway's bridge rotates QRs on its own; "Generate New QR" simply
+        // forces an immediate fresh fetch.
+        startHermesPairingPoller();
     }
 
     window.showConfirmModal = function(title, message, options = {}) {
