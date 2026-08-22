@@ -83,20 +83,29 @@
 
             <form action="/login" method="POST" class="space-y-5">
                 <div class="space-y-2">
-                    <label for="password" class="block text-sm font-semibold text-white/82">Admin password</label>
+                    <label for="email" class="block text-sm font-semibold text-white/82">Work email</label>
+                    <input type="email" name="email" id="email" required
+                        autocomplete="username"
+                        placeholder="you@company.com"
+                        aria-describedby="error-box"
+                        class="w-full px-4 py-3.5 rounded-2xl border border-white/10 bg-white/6 text-white placeholder:text-white/32 transition focus:border-primary/40">
+                </div>
+
+                <div class="space-y-2">
+                    <label for="password" class="block text-sm font-semibold text-white/82">Password</label>
                     <input type="password" name="password" id="password" required
                         autocomplete="current-password"
                         placeholder="Enter your password"
                         aria-describedby="password-help error-box"
                         class="w-full px-4 py-3.5 rounded-2xl border border-white/10 bg-white/6 text-white placeholder:text-white/32 transition focus:border-primary/40">
                     <p id="password-help" class="text-xs text-white/48 leading-relaxed">
-                        Use the administrator password for this deployment.
+                        Sign in with your omniWA account credentials.
                     </p>
                 </div>
 
                 <div id="error-box" class="hidden state-message" data-tone="danger" role="alert" aria-live="assertive">
-                    <p class="font-semibold text-white">Incorrect password.</p>
-                    <p class="text-sm text-white/72 mt-1">Check the credentials and try again.</p>
+                    <p class="font-semibold text-white">Sign-in failed.</p>
+                    <p class="text-sm text-white/72 mt-1">Check your email and password, then try again.</p>
                 </div>
 
                 <button type="submit"
