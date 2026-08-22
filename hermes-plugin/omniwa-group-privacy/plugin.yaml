@@ -1,0 +1,7 @@
+name: omniwa-group-privacy
+version: 1.0.0
+description: >
+  Keeps owner-sensitive data out of WhatsApp groups. Injects a hard privacy
+  directive into group turns (pre_llm_call) and scrubs emails, phone numbers,
+  and long numeric tokens from replies bound for groups (transform_llm_output).
+kind: standalone
