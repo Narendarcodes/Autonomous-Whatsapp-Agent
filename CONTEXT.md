@@ -74,6 +74,10 @@ WhatsApp User
    - **Owner** (`is_owner=true`): Approves contacts, modifies Preferences, links Google.
    - **Authorized User** (`has_permission=true`): Granted access rights by the owner. Can chat in DMs and trigger mentions in groups.
    - **Stranger** (`has_permission=false`): Message is **held** — PendingDecision created, owner receives an approval prompt; stranger sees "forwarded to owner" reply. Owner approves by replying `<CODE> yes`.
+4. **Group Privacy Layer (owner-data leak prevention)** — enforced at BOTH hops:
+   - **Hermes side** (`hermes-plugin/omniwa-group-privacy`, deployed to `/opt/data/plugins/`, enabled in config): with `HERMES_OWNS_WHATSAPP=true` the Baileys bridge generates AND delivers replies itself, so this is the primary guard. A `pre_llm_call` hook injects the GROUP PRIVACY MODE directive into group turns only; a `transform_llm_output` hook scrubs emails/phones/long numeric tokens from final group-bound replies. Group detection via gateway session contextvars (`@g.us` chat id). DMs, CLI, cron untouched.
+   - **Backend side** (`services/group_privacy_service.py`, wired in `agent_harness.dispatch_to_hermes`): same directive + redaction for the legacy dispatch path.
+   - **Display hardening**: WhatsApp platform has `tool_progress: false` and `streaming: false` in Hermes config, so groups never see tool-name bubbles or live-edited partial (pre-scrub) replies.
 
 ---
 
