@@ -11,36 +11,10 @@ from app.api import health, oauth, permissions, setup, webhooks, whatsapp_pairin
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.redis_client import close_redis, ensure_consumer_group, get_redis
-from app.services.whatsapp_service import whatsapp_service, normalize_phone_number
+from app.services.whatsapp_service import normalize_phone_number
 
 setup_logging()
 logger = get_logger(__name__)
-
-
-async def _ensure_instance_created() -> None:
-    """Make sure Evolution API has our WhatsApp instance. Retries during startup."""
-    for attempt in range(12):
-        try:
-            info = await whatsapp_service.instance_status()
-            # If we can read state, the instance exists already — good.
-            if info and info.get("instance", {}).get("state") is not None:
-                await whatsapp_service.configure_webhook()
-                logger.info(
-                    "WhatsApp instance exists (state=%s)",
-                    info["instance"].get("state"),
-                )
-                return
-            # No instance yet — create one.
-            ok = await whatsapp_service.create_instance()
-            if ok:
-                logger.info("WhatsApp instance auto-created on startup")
-                return
-        except Exception as exc:
-            logger.debug("Instance check attempt %d failed: %s", attempt + 1, exc)
-        await asyncio.sleep(10)
-    logger.warning(
-        "Gave up auto-creating WhatsApp instance — call POST /setup/create-instance manually"
-    )
 
 
 @asynccontextmanager
@@ -48,21 +22,6 @@ async def lifespan(app: FastAPI):
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     await get_redis()
     await ensure_consumer_group()
-    
-    # Assert evolution_api database for Evolution API session persistence
-    from sqlalchemy import text
-    try:
-        from sqlalchemy.ext.asyncio import create_async_engine
-        base_url = settings.database_url.rsplit("/", 1)[0]
-        admin_engine = create_async_engine(f"{base_url}/postgres", isolation_level="AUTOCOMMIT")
-        async with admin_engine.connect() as conn:
-            res = await conn.execute(text("SELECT 1 FROM pg_database WHERE datname='evolution_api'"))
-            if not res.scalar():
-                await conn.execute(text("CREATE DATABASE evolution_api"))
-                logger.info("Lifespan startup: Created 'evolution_api' database in PostgreSQL for WhatsApp session persistence.")
-        await admin_engine.dispose()
-    except Exception as evo_db_err:
-        logger.debug("Evolution DB assertion check: %s", evo_db_err)
 
     # Assert trust_level column in users table
     from app.db.database import AsyncSessionLocal
@@ -115,20 +74,14 @@ async def lifespan(app: FastAPI):
             )
             current_owner = owner_res.scalar_one_or_none()
 
-            connected_phone = await whatsapp_service.get_bot_phone()
-            if connected_phone:
-                owner_phone = normalize_phone_number(connected_phone)
+            if current_owner and current_owner.wa_phone:
+                owner_phone = current_owner.wa_phone
                 settings.OWNER_WA_PHONE = owner_phone
-                logger.info("Lifespan startup: Dynamic owner phone resolved from active WhatsApp session: %s", owner_phone)
+                logger.info("Lifespan startup: Using DB owner phone: %s", owner_phone)
             else:
-                if current_owner and current_owner.wa_phone:
-                    owner_phone = current_owner.wa_phone
-                    settings.OWNER_WA_PHONE = owner_phone
-                    logger.info("Lifespan startup: Evolution API offline/slow, using current DB owner phone: %s", owner_phone)
-                else:
-                    owner_phone = normalize_phone_number(settings.OWNER_WA_PHONE) or settings.OWNER_WA_PHONE.lstrip("+")
-                    settings.OWNER_WA_PHONE = owner_phone
-                    logger.info("Lifespan startup: Fallback owner phone from settings: %s", owner_phone)
+                owner_phone = normalize_phone_number(settings.OWNER_WA_PHONE) or settings.OWNER_WA_PHONE.lstrip("+")
+                settings.OWNER_WA_PHONE = owner_phone
+                logger.info("Lifespan startup: Fallback owner phone from settings: %s", owner_phone)
 
             if owner_phone:
                 # Check duplicate user to prevent unique constraints error
@@ -180,9 +133,9 @@ async def lifespan(app: FastAPI):
             await db.rollback()
             logger.error("Failed to synchronize owner records on startup: %s", e)
 
-    asyncio.create_task(_ensure_instance_created())
     yield
-    await whatsapp_service.close()
+    from app.services import bridge_client
+    await bridge_client.close()
     await close_redis()
     logger.info("Shutdown complete")
 

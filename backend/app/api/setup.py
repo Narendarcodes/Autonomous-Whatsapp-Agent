@@ -14,7 +14,7 @@ from app.core.auth import SESSION_COOKIE
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import cache_get, cache_set
 from app.core.logging import get_logger
-from app.services.whatsapp_service import INSTANCE_NAME, whatsapp_service, normalize_phone_number, validate_phone_number
+from app.services.whatsapp_service import normalize_phone_number, validate_phone_number
 from app.models.models import User, AuditLog, ApiKey, CustomerGoogleToken
 from app.core.security import decrypt_token
 from app.services.preferences_service import preferences_service
@@ -137,103 +137,6 @@ async def setup_page(request: Request) -> Response:
     return Response(content=html, media_type="text/html")
 
 
-@router.get("/setup/qr-status")
-async def qr_status(background_tasks: BackgroundTasks, dependencies=Depends(verify_api_admin)) -> dict:
-    info = await whatsapp_service.instance_status()
-    if info is None:
-        raise HTTPException(status_code=503, detail="Evolution API unreachable")
-    
-    state = info.get("instance", {}).get("state")
-    qr_data = await cache_get("whatsapp:qr_code")
-    
-    profile_pic = None
-    phone = None
-    if state == "open":
-        phone = await whatsapp_service.get_bot_phone()
-        if phone:
-            profile_pic = await whatsapp_service.get_profile_picture(phone)
-            background_tasks.add_task(whatsapp_service.sync_contacts)
-            
-            # Dynamically synchronize owner phone to connected primary session
-            phone_clean = normalize_phone_number(phone)
-            if phone_clean:
-                settings.OWNER_WA_PHONE = phone_clean
-                async with AsyncSessionLocal() as db:
-                    owner_res = await db.execute(select(User).where(User.is_owner == True))
-                    current_owner = owner_res.scalar_one_or_none()
-                    
-                    if not current_owner or current_owner.wa_phone != phone_clean:
-                        dup_res = await db.execute(select(User).where(User.wa_phone == phone_clean))
-                        dup_user = dup_res.scalar_one_or_none()
-                        
-                        if current_owner:
-                            if dup_user and dup_user.id != current_owner.id:
-                                await db.delete(dup_user)
-                                await db.flush()
-                            current_owner.wa_phone = phone_clean
-                            current_owner.has_permission = True
-                            await db.commit()
-                            logger.info("setup.py qr_status: Dynamically updated owner phone to connected primary phone: %s", phone_clean)
-                        else:
-                            if dup_user:
-                                dup_user.is_owner = True
-                                dup_user.has_permission = True
-                                await db.commit()
-                                logger.info("setup.py qr_status: Dynamically promoted existing user %s to owner", phone_clean)
-                            else:
-                                new_owner = User(
-                                    wa_phone=phone_clean,
-                                    is_owner=True,
-                                    has_permission=True,
-                                    display_name="You (Owner)"
-                                )
-                                db.add(new_owner)
-                                await db.commit()
-                                logger.info("setup.py qr_status: Dynamically created owner user from connected phone: %s", phone_clean)
-
-            
-    return {
-        "state": state,
-        "instance": INSTANCE_NAME,
-        "has_qr": bool(qr_data),
-        "qr_url": f"{settings.BASE_URL}/setup/qr-image",
-        "profile_pic": profile_pic,
-        "phone": phone
-    }
-
-
-@router.get("/setup/qr-image")
-async def qr_image(dependencies=Depends(verify_api_admin)) -> Response:
-    """Serve the latest QR code stored from the QRCODE_UPDATED webhook."""
-    import base64
-    qr_data = await cache_get("whatsapp:qr_code")
-    if not qr_data:
-        raise HTTPException(
-            status_code=404,
-            detail="No QR code available yet. The instance is not in connecting state. "
-                   "Call POST /setup/create-instance first, then refresh this page within 60s."
-        )
-    # Evolution sends "data:image/png;base64,<data>" or just the base64 string
-    if "base64," in qr_data:
-        _, encoded = qr_data.split("base64,", 1)
-    else:
-        encoded = qr_data
-    try:
-        img_bytes = base64.b64decode(encoded)
-        return Response(content=img_bytes, media_type="image/png")
-    except Exception:
-        # Maybe it's a plain QR string, not base64 image — return as text
-        return Response(content=qr_data.encode(), media_type="text/plain")
-
-
-@router.post("/setup/create-instance")
-async def create_instance(dependencies=Depends(verify_api_admin)) -> dict:
-    ok = await whatsapp_service.create_instance()
-    if not ok:
-        raise HTTPException(status_code=502, detail="Instance creation failed")
-    return {"status": "created", "instance": INSTANCE_NAME}
-
-
 @router.get("/dashboard")
 async def dashboard(request: Request) -> Response:
     """Owner's control panel — manage users and permissions."""
@@ -324,64 +227,13 @@ async def save_preferences(payload: PreferencesPayload, dependencies=Depends(ver
                 raise HTTPException(status_code=404, detail="Owner user not found. Scan WhatsApp QR first.")
         
 
-        if payload.bot_mode == "self_chat":
-            connected_phone = await whatsapp_service.get_bot_phone()
-            if not connected_phone:
-                if owner.wa_phone:
-                    connected_clean = owner.wa_phone
-                else:
-                    raise HTTPException(status_code=400, detail="WhatsApp session not connected. Please connect WhatsApp first.")
-            else:
-                connected_clean = normalize_phone_number(connected_phone)
-            
-            if owner.wa_phone != connected_clean:
-                dup_res = await db.execute(
-                    select(User).where(User.wa_phone == connected_clean)
-                )
-                dup_user = dup_res.scalar_one_or_none()
-                if dup_user and dup_user.id != owner.id:
-                    await db.delete(dup_user)
-                    await db.flush()
-            owner.wa_phone = connected_clean
-            settings.OWNER_WA_PHONE = connected_clean
-            payload.owner_phone = connected_clean
-            payload.bot_phone = connected_clean
-        elif payload.bot_mode == "dual_number":
-            # Note: The agent phone LINKING (QR scan + Evolution API instance creation) is handled
-            # by POST /api/agent-phone/request and GET /api/agent-phone/qr-status.
-            # This endpoint only validates + saves the agent phone value that was already linked.
-            
-            connected_phone = await whatsapp_service.get_bot_phone()
-            if not connected_phone:
-                if owner.wa_phone:
-                    connected_clean = owner.wa_phone
-                else:
-                    raise HTTPException(status_code=400, detail="WhatsApp session not connected. Please connect WhatsApp first.")
-            else:
-                connected_clean = normalize_phone_number(connected_phone)
-            
-            if owner.wa_phone != connected_clean:
-                dup_res = await db.execute(
-                    select(User).where(User.wa_phone == connected_clean)
-                )
-                dup_user = dup_res.scalar_one_or_none()
-                if dup_user and dup_user.id != owner.id:
-                    await db.delete(dup_user)
-                    await db.flush()
-            owner.wa_phone = connected_clean
-            settings.OWNER_WA_PHONE = connected_clean
-            payload.owner_phone = connected_clean
+        # v3: relationship mode is Hermes bridge configuration (see
+        # /api/pairing/bridge). Identity stays pinned to the owner user record.
+        if payload.bot_mode is not None and payload.owner_phone:
+            clean = normalize_phone_number(payload.owner_phone)
+            if clean:
+                settings.OWNER_WA_PHONE = clean
 
-            
-            if not payload.bot_phone:
-                raise HTTPException(status_code=400, detail="Agent Phone must be configured")
-            
-            validation = validate_phone_number(payload.bot_phone)
-            if validation["is_valid"]:
-                payload.bot_phone = validation["digits"]
-            else:
-                raise HTTPException(status_code=400, detail=validation.get("error", "Invalid agent phone number."))
-        
         await preferences_service.set(owner.id, "bot_name", payload.bot_name)
         if payload.bot_mode is not None:  # v3: mode lives in Hermes bridge config now
             await preferences_service.set(owner.id, "bot_mode", payload.bot_mode)

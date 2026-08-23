@@ -44,12 +44,9 @@ def mock_owner_prefs(monkeypatch):
 
 @pytest.fixture
 def legacy_delivery(monkeypatch):
-    """Pin HERMES_OWNS_WHATSAPP=false so replies go through whatsapp_service.send_text.
-
-    In production the Hermes Baileys bridge delivers replies itself; these
-    tests exercise the backend's own send path (redaction before send).
-    """
-    monkeypatch.setattr(settings, "HERMES_OWNS_WHATSAPP", False, raising=False)
+    """Legacy delivery fixture — no longer needed since v3 (Hermes bridge
+    delivers replies natively). Kept as a no-op so old test signatures work."""
+    return
 
 
 @pytest.mark.asyncio
@@ -86,42 +83,18 @@ async def test_dm_session_no_privacy_directive(mock_owner_prefs):
 
 @pytest.mark.asyncio
 async def test_group_reply_is_redacted_before_send(mock_owner_prefs, legacy_delivery):
-    sent = {}
-
-    async def fake_post(url, json=None, headers=None, timeout=None):
-        return _fake_hermes_response("Sure — event 'Board Meeting' at narendar@omniwa.app")
-
-    async def _capture(chat_id, text):
-        sent["chat_id"] = chat_id
-        sent["text"] = text
-
-    with patch.object(agent_harness.httpx, "AsyncClient") as ac, \
-         patch("app.services.whatsapp_service.whatsapp_service.send_text", new=_capture):
-        ac.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=fake_post))
-        ac.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await agent_harness.dispatch_to_hermes(GROUP_JID, "what's on my calendar")
-
-    assert sent.get("chat_id") == GROUP_JID
-    assert "narendar@omniwa.app" not in sent.get("text", "")
-    assert "[REDACTED]" in sent.get("text", "")
+    """Layer 2: reply content bound for a group passes through redaction."""
+    finalized = agent_harness._finalize_reply(
+        "Sure — event 'Board Meeting' at narendar@omniwa.app", in_group=True
+    )
+    assert "narendar@omniwa.app" not in finalized
+    assert "[REDACTED]" in finalized
 
 
 @pytest.mark.asyncio
 async def test_dm_reply_not_redacted(mock_owner_prefs, legacy_delivery):
-    sent = {}
-
-    async def fake_post(url, json=None, headers=None, timeout=None):
-        return _fake_hermes_response("Your email is narendar@omniwa.app")
-
-    async def _capture(chat_id, text):
-        sent["text"] = text
-
-    with patch.object(agent_harness.httpx, "AsyncClient") as ac, \
-         patch("app.services.whatsapp_service.whatsapp_service.send_text", new=_capture):
-        ac.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=fake_post))
-        ac.return_value.__aexit__ = AsyncMock(return_value=False)
-
-        await agent_harness.dispatch_to_hermes(DM_PHONE, "what's my email")
-
-    assert "narendar@omniwa.app" in sent.get("text", "")
+    """DMs are untouched by the privacy redaction layer."""
+    finalized = agent_harness._finalize_reply(
+        "Your email is narendar@omniwa.app", in_group=False
+    )
+    assert "narendar@omniwa.app" in finalized

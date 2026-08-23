@@ -1,7 +1,7 @@
 """Setup orchestration — guides users through WhatsApp setup flow."""
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.models import User
-from app.services.whatsapp_service import whatsapp_service
+from app.services.bridge_client import send_text as bridge_send_text
 from app.core.logging import get_logger
 from app.core.config import settings
 
@@ -43,7 +43,7 @@ async def send_setup_prompt(user_phone: str, status: str) -> None:
 
 Let me know when you're done!
 """
-    await whatsapp_service.send_text(user_phone, msg)
+    await bridge_send_text(user_phone, msg)
 
 
 async def handle_setup_command(db: AsyncSession, user: User, command: str) -> str:

@@ -1,12 +1,10 @@
 """Health check endpoints."""
-import httpx
 from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import get_redis
-from app.services.whatsapp_service import INSTANCE_NAME, whatsapp_service
 
 router = APIRouter()
 
@@ -35,17 +33,10 @@ async def health_detailed() -> dict:
         status["redis"] = f"error: {exc}"
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(settings.OPENWA_BASE_URL.rstrip("/") + "/")
-        if resp.status_code == 200:
-            # Check if our instance exists and what state it's in
-            instance_info = await whatsapp_service.instance_status()
-            state = (instance_info or {}).get("instance", {}).get("state")
-            status["openwa"] = state if state else "ready (no instance yet — run /setup/create-instance)"
-        else:
-            status["openwa"] = f"http_{resp.status_code}"
+        from app.services.bridge_client import bridge_status
+        status["whatsapp_bridge"] = await bridge_status()
     except Exception as exc:
-        status["openwa"] = f"error: {exc}"
+        status["whatsapp_bridge"] = f"error: {exc}"
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:

@@ -240,86 +240,38 @@ async def test_contacts_search(db_session):
 
 @pytest.mark.asyncio
 async def test_preferences_validation_checks(db_session, monkeypatch):
-    """Verify preference validation constraints for dual phone config against Evolution API active connection."""
-    from app.services.whatsapp_service import whatsapp_service
-    
-    owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-    if not owner_phone:
-        owner_phone = "916300354385"
-    
+    """v3: preferences accept bot_mode without Evolution verification; the
+    owner phone is normalized from owner_phone and pinned to settings."""
+    owner_phone = settings.OWNER_WA_PHONE.lstrip("+") or "916300354385"
+
     # Seed owner user
     owner = User(wa_phone=owner_phone, is_owner=True, has_permission=True)
     db_session.add(owner)
     await db_session.commit()
-    
-    # Mock connected bot phone number
-    async def mock_get_bot_phone():
-        return "12025550144"
-    
-    monkeypatch.setattr(whatsapp_service, "get_bot_phone", mock_get_bot_phone)
-    
-    async with await get_auth_client() as ac:
-        # 1. Validation fails: bot_phone is missing/empty in dual_number mode
-        payload_fail = {
-            "bot_name": "Jarvis",
-            "timezone": "Asia/Kolkata",
-            "bot_mode": "dual_number",
-            "quiet_hours_start": "22:00",
-            "quiet_hours_end": "07:00",
-            "stt_provider": "groq",
-            "tts_provider": "edge",
-            "tts_voice": "Female",
-            "bot_phone": ""
-        }
-        resp = await ac.post("/api/preferences", json=payload_fail)
-        assert resp.status_code == 400
-        assert "Agent Phone must be configured" in resp.json()["detail"]
-        
-        # 2. Providing a NEW bot_phone triggers verification_pending (whatsapp DM confirmation required)
-        payload_new_bot = {
-            "bot_name": "Jarvis",
-            "timezone": "Asia/Kolkata",
-            "bot_mode": "dual_number",
-            "quiet_hours_start": "22:00",
-            "quiet_hours_end": "07:00",
-            "stt_provider": "groq",
-            "tts_provider": "edge",
-            "tts_voice": "Female",
-            "bot_phone": "12025550222"
-        }
-        resp2 = await ac.post("/api/preferences", json=payload_new_bot)
-        assert resp2.status_code == 200
-        # Newly submitted bot_phone triggers a WhatsApp verification DM; pending until confirmed
-        assert resp2.json()["status"] in ("verification_pending", "success")
-        
-        # Verify settings OWNER_WA_PHONE is updated to the connected phone
-        assert settings.OWNER_WA_PHONE == "12025550144"
 
-        # 3. POST with the same bot_phone again (no change) + custom owner_name → succeeds immediately
-        payload_same_bot = {
+    async with await get_auth_client() as ac:
+        # 1. Legacy-style payload with bot_mode + owner_phone saves cleanly —
+        #    no 400s, no verification flow (bridge config owns mode now).
+        payload = {
             "bot_name": "Jarvis",
             "timezone": "Asia/Kolkata",
-            "bot_mode": "dual_number",
+            "bot_mode": "self_chat",
             "quiet_hours_start": "22:00",
             "quiet_hours_end": "07:00",
             "stt_provider": "groq",
             "tts_provider": "edge",
             "tts_voice": "Female",
-            "bot_phone": "12025550222",
-            "owner_name": "Custom Owner Name"
+            "owner_phone": owner_phone,
+            "owner_name": "Custom Owner Name",
         }
-        # Manually force the preference so re-submission detects "no change" and skips verification
-        from app.services.preferences_service import preferences_service
-        await preferences_service.set(owner.id, "bot_phone", "12025550222")
-        resp3 = await ac.post("/api/preferences", json=payload_same_bot)
-        assert resp3.status_code == 200
-        # Same number already configured → skips verification, saves successfully
-        assert resp3.json()["status"] == "success"
-        
-        # 4. Verify custom owner_name is returned on GET
-        resp4 = await ac.get("/api/preferences")
-        assert resp4.status_code == 200
-        assert resp4.json()["owner_name"] == "Custom Owner Name"
+        resp = await ac.post("/api/preferences", json=payload)
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "success"
+
+        # 2. Custom owner_name is returned on GET
+        resp2 = await ac.get("/api/preferences")
+        assert resp2.status_code == 200
+        assert resp2.json()["owner_name"] == "Custom Owner Name"
 
 
 @pytest.mark.asyncio
@@ -457,55 +409,17 @@ async def test_delete_permission_endpoint(db_session):
 
 
 @pytest.mark.asyncio
-async def test_dynamic_owner_resolution(db_session, monkeypatch):
-    """Verify that polling qr-status dynamically syncs the owner setting and DB record."""
-    from app.services.whatsapp_service import whatsapp_service
-    from sqlalchemy import select
-
-    # Mock connected bot phone number
-    async def mock_get_bot_phone():
-        return "919999999999"
-
-    async def mock_instance_status(*args):
-        return {"instance": {"state": "open"}}
-
-    async def mock_get_profile_pic(*args):
-        return None
-
-    async def mock_sync_contacts(*args):
-        return []
-
-    monkeypatch.setattr(whatsapp_service, "get_bot_phone", mock_get_bot_phone)
-    monkeypatch.setattr(whatsapp_service, "instance_status", mock_instance_status)
-    monkeypatch.setattr(whatsapp_service, "get_profile_picture", mock_get_profile_pic)
-    monkeypatch.setattr(whatsapp_service, "sync_contacts", mock_sync_contacts)
-
-    async with await get_auth_client() as ac:
-        resp = await ac.get("/setup/qr-status")
-        assert resp.status_code == 200
-
-        # Check settings updated
-        assert settings.OWNER_WA_PHONE == "919999999999"
-
-        # Check DB updated
-        result = await db_session.execute(select(User).where(User.wa_phone == "919999999999"))
-        owner_user = result.scalar_one_or_none()
-        assert owner_user is not None
-        assert owner_user.is_owner is True
-        assert owner_user.has_permission is True
-
-
-@pytest.mark.asyncio
 async def test_sync_contacts_endpoint(db_session, monkeypatch):
-    """Verify that calling POST /api/contacts/sync triggers sync and returns count."""
-    from app.services.whatsapp_service import whatsapp_service
-    
-    # Mock contacts sync return
-    async def mock_sync_contacts():
-        return [{"phone": "12025550999", "name": "Sync User", "jid": "12025550999@s.whatsapp.net"}]
-        
-    monkeypatch.setattr(whatsapp_service, "sync_contacts", mock_sync_contacts)
-    
+    """v3: /api/contacts/sync reports the cached directory size (no live source)."""
+    from app.db.redis_client import cache_set
+    import json as _json
+
+    await cache_set(
+        "whatsapp:contacts_cache",
+        _json.dumps([{"phone": "12025550999", "name": "Cached User", "jid": "12025550999@s.whatsapp.net"}]),
+        ttl_seconds=60,
+    )
+
     async with await get_auth_client() as ac:
         resp = await ac.post("/api/contacts/sync")
         assert resp.status_code == 200

@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 
 HERMES_API_URL = f"{settings.HERMES_BASE_URL.rstrip('/')}/v1/chat/completions"
 
+
+def _finalize_reply(content: str, *, in_group: bool) -> str:
+    """Apply group-privacy regex redaction to reply content bound for a group.
+
+    Layer 2 of Group Privacy Mode; layer 1 is the system-prompt directive.
+    """
+    if in_group:
+        from app.services.group_privacy_service import redact
+        return redact(content)
+    return content
+
 async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: str | None = None, use_agent: bool = False) -> dict | None:
     """
     Sends the user's message to Hermes Agent. 
@@ -29,7 +40,8 @@ async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: 
         session_id: The WhatsApp Phone Number (acts as X-Hermes-Session-Id for memory).
         message_text: The incoming message to process.
         system_prompt: Optional system instructions/context.
-        use_agent: If True, send response through the agent session instead of primary.
+        use_agent: Ignored since v3 (single Hermes session per chat; kept for
+            call-site compatibility).
     """
     if not message_text.strip():
         return None
@@ -131,22 +143,13 @@ async def dispatch_to_hermes(session_id: str, message_text: str, system_prompt: 
                     if content:
                         # Defense-in-depth: scrub sensitive tokens from replies
                         # bound for group chats (prompt guardrail may be bypassed).
-                        if in_group:
-                            from app.services.group_privacy_service import redact
-                            content = redact(content)
-                        if getattr(settings, "HERMES_OWNS_WHATSAPP", False):
-                            # Hermes' native Baileys bridge delivers the reply itself
-                            # (session-id = chat target). omniWA does NOT call Evolution.
-                            logger.info(
-                                "HERMES_OWNS_WHATSAPP=true — reply for session %s delivered by Hermes bridge",
-                                session_id,
-                            )
-                        elif use_agent:
-                            from app.services.agent_instance_service import agent_instance_service
-                            await agent_instance_service.send_via_agent(session_id, content)
-                        else:
-                            from app.services.whatsapp_service import whatsapp_service
-                            await whatsapp_service.send_text(session_id, content)
+                        content = _finalize_reply(content, in_group=in_group)
+                        # v3: Hermes' native Baileys bridge delivers the reply itself
+                        # (session-id = chat target). omniWA does not send messages.
+                        logger.info(
+                            "Reply for session %s delivered by Hermes bridge",
+                            session_id,
+                        )
             except Exception as e:
                 logger.error(f"Failed to send Hermes reply back to WhatsApp: {e}")
             return data

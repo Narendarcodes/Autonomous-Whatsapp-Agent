@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 from app.models.models import User, PendingDecision
 from app.services.permission_service import permission_service
-from app.services.whatsapp_service import whatsapp_service
 from app.core.config import settings
 
 @pytest.mark.asyncio
@@ -31,7 +30,7 @@ async def test_request_permission(db_session, mocker):
     await db_session.refresh(user)
 
     # Mock WhatsApp delivery
-    mock_send = mocker.patch.object(whatsapp_service, "send_text", new_callable=AsyncMock)
+    mock_send = mocker.patch("app.services.permission_service.bridge_send_text", new_callable=AsyncMock)
 
     proposed = {"summary": "Doctor appointment", "start_time": "2026-06-15T15:00:00", "end_time": "2026-06-15T16:00:00"}
     

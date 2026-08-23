@@ -1,7 +1,7 @@
 """Tests for the message-level permission cascade (Task C1).
 
 Owner → run instantly. Authorized → run. Stranger → hold + owner notified.
-Only whatsapp_service.send_text is mocked (owner DM); DB is the real test Postgres.
+Only the bridge send function is mocked (owner DM); DB is the real test Postgres.
 """
 import pytest
 from unittest.mock import patch, AsyncMock
@@ -40,7 +40,7 @@ async def test_authorized_user_runs(test_engine):
 @pytest.mark.asyncio
 async def test_stranger_held_and_owner_notified(test_engine):
     with patch(
-        "app.services.permission_service.whatsapp_service.send_text",
+        "app.services.permission_service.bridge_send_text",
         new=AsyncMock(),
     ) as mock_send:
         async with AsyncSessionLocal() as db:
@@ -67,7 +67,7 @@ async def test_unknown_sender_gets_row_with_tenant(test_engine):
         await db.commit()
         tid = t.id
 
-    with patch("app.services.permission_service.whatsapp_service.send_text", new=AsyncMock()):
+    with patch("app.services.permission_service.bridge_send_text", new=AsyncMock()):
         async with AsyncSessionLocal() as db:
             result = await permission_service.decide(db, "944440000000", "hi", tenant_id=tid)
 
@@ -82,7 +82,7 @@ async def test_unknown_sender_gets_row_with_tenant(test_engine):
 @pytest.mark.asyncio
 async def test_hold_then_owner_approves_via_code(test_engine):
     """Full cascade: stranger held → owner replies '<CODE> yes' → decision approved."""
-    with patch("app.services.permission_service.whatsapp_service.send_text", new=AsyncMock()):
+    with patch("app.services.permission_service.bridge_send_text", new=AsyncMock()):
         async with AsyncSessionLocal() as db:
             result = await permission_service.decide(db, "955550000000", "create a doc")
             code = result["decision"].short_code

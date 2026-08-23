@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.models import PendingDecision, User
-from app.services.whatsapp_service import whatsapp_service
+from app.services.bridge_client import send_text as bridge_send_text
 
 logger = get_logger(__name__)
 
@@ -111,7 +111,7 @@ class PermissionService:
         owner_target = (bot_phone or settings.OWNER_WA_PHONE).lstrip("+")
         
         msg = _format_permission_message(action_type, proposed_action, code)
-        await whatsapp_service.send_text(owner_target, msg)
+        await bridge_send_text(owner_target, msg)
 
         logger.info("Created pending decision %s (%s) for %s", code, action_type, user.id)
         return decision

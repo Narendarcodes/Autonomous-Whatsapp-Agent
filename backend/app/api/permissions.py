@@ -9,7 +9,8 @@ from app.core.security import verify_openwa_signature
 from app.db.database import AsyncSessionLocal
 from app.models.models import User
 from app.api.setup import verify_api_admin
-from app.services.whatsapp_service import normalize_phone_number
+from app.services.whatsapp_service import normalize_phone_number  # phone utils (kept)
+from app.services import bridge_client
 
 router = APIRouter(dependencies=[Depends(verify_api_admin)])
 logger = get_logger(__name__)
@@ -46,44 +47,21 @@ async def list_permissions() -> dict:
         )
         users = result.scalars().all()
 
-        from app.services.whatsapp_service import whatsapp_service
-
         async def resolve_user_details(u: User) -> tuple[User, str, str | None, bool]:
+            """v3: no Evolution contact directory — names come from stored
+            records; unknown senders get a placeholder. Profile pictures are
+            not resolvable without WhatsApp contact APIs."""
             display_name = u.display_name
             needs_commit = False
-            try:
-                # Resolve from WhatsApp contacts dynamically
-                contact_info = await whatsapp_service.get_contact_info(u.wa_phone)
-                resolved_name = None
-                if contact_info:
-                    resolved_name = contact_info.get("name") or contact_info.get("pushName") or contact_info.get("pushname")
-                
-                if resolved_name:
-                    resolved_name = resolved_name.lstrip("~").strip()
-                    if resolved_name != display_name:
-                        u.display_name = resolved_name
-                        display_name = resolved_name
-                        needs_commit = True
-                else:
-                    is_bot_phone = (bot_phone and u.wa_phone == bot_phone)
-                    if not u.is_owner and not is_bot_phone and not display_name:
-                        default_name = f"User {u.wa_phone[-4:]}"
-                        u.display_name = default_name
-                        display_name = default_name
-                        needs_commit = True
-            except Exception as e:
-                logger.error(f"Failed to lookup contact info for {u.wa_phone}: {e}")
+            if not display_name:
+                is_bot_phone = (bot_phone and u.wa_phone == bot_phone)
+                if not u.is_owner and not is_bot_phone:
+                    display_name = f"User {u.wa_phone[-4:]}"
+                    u.display_name = display_name
+                    needs_commit = True
             if not display_name:
                 display_name = f"User {u.wa_phone[-4:]}"
-            
-            # Fetch profile picture concurrently
-            profile_pic = None
-            try:
-                profile_pic = await whatsapp_service.get_profile_picture(u.wa_phone)
-            except Exception as e:
-                logger.error(f"Failed to fetch profile picture for {u.wa_phone}: {e}")
-                
-            return u, display_name, profile_pic, needs_commit
+            return u, display_name, None, needs_commit
 
         tasks = [resolve_user_details(u) for u in users]
         results = await asyncio.gather(*tasks)
@@ -298,17 +276,27 @@ async def delete_permission(phone: str = Query(..., description="User phone to d
 
 @router.post("/api/contacts/sync")
 async def sync_contacts_endpoint() -> dict:
-    """Explicitly trigger WhatsApp contact synchronization."""
-    from app.services.whatsapp_service import whatsapp_service
-    contacts = await whatsapp_service.sync_contacts()
-    return {"status": "success", "count": len(contacts)}
+    """Report the cached contact-directory size (v3: no live directory source).
+
+    The Evolution API contact store is gone; the cache reflects numbers seen
+    via pairing and ACL activity. Kept for dashboard compatibility.
+    """
+    import json as _json
+    from app.db.redis_client import cache_get
+    cached = await cache_get("whatsapp:contacts_cache")
+    count = 0
+    if cached:
+        try:
+            count = len(_json.loads(cached))
+        except Exception:
+            count = 0
+    return {"status": "success", "count": count}
 
 
 @router.get("/api/contacts/search")
 async def search_contacts(q: str = Query("", description="Search query")) -> list[dict]:
     """Search and autocomplete whitelisted user contacts."""
     from app.db.redis_client import cache_get
-    from app.services.whatsapp_service import whatsapp_service
     import json
 
     q_clean = q.strip()
@@ -316,14 +304,13 @@ async def search_contacts(q: str = Query("", description="Search query")) -> lis
         return []
 
     contacts_json = await cache_get("whatsapp:contacts_cache")
-    if not contacts_json:
-        # Sync on demand
-        contacts = await whatsapp_service.sync_contacts()
-    else:
+    if contacts_json:
         try:
             contacts = json.loads(contacts_json)
         except Exception:
             contacts = []
+    else:
+        contacts = []
 
     q_lower = q_clean.lower()
     results = []
