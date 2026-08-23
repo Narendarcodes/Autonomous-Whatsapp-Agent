@@ -6,10 +6,24 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 # 1. Modify settings to test DB BEFORE importing app modules
+# Only fall back to localhost when the docker-network hostnames are NOT
+# resolvable/reachable (host-side runs). Inside the container the services
+# live at postgres:5432 / redis:6379 and must be kept as-is.
+import socket
 from app.core.config import settings
-if settings.POSTGRES_HOST == "postgres":
+
+
+def _service_reachable(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+if settings.POSTGRES_HOST == "postgres" and not _service_reachable("postgres", 5432):
     settings.POSTGRES_HOST = "localhost"
-if settings.REDIS_HOST == "redis":
+if settings.REDIS_HOST == "redis" and not _service_reachable("redis", 6379):
     settings.REDIS_HOST = "localhost"
 
 if not settings.POSTGRES_DB.endswith("_test"):
@@ -50,6 +64,13 @@ async def reset_global_connections():
     except Exception:
         pass
     yield
+    try:
+        from app.services import bridge_client
+        # A previous test may have leaked a mock into the singleton via a
+        # global httpx patch; never let its fake methods escape teardown.
+        await bridge_client.close()
+    except Exception:
+        pass
     try:
         await redis_client.close_redis()
     except Exception:

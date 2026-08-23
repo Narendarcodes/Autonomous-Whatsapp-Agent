@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock
 from app.models.models import User
 from app.services.setup_service import check_setup_status, send_setup_prompt, handle_setup_command
-from app.services.whatsapp_service import whatsapp_service
+from app.services import setup_service
 
 @pytest.mark.asyncio
 async def test_check_setup_status(db_session):
@@ -28,7 +28,7 @@ async def test_check_setup_status(db_session):
 @pytest.mark.asyncio
 async def test_send_setup_prompt(mocker):
     """Verify setup instructions are formatted correctly and sent to user JID."""
-    mock_send = mocker.patch.object(whatsapp_service, "send_text", new_callable=AsyncMock)
+    mock_send = mocker.patch.object(setup_service, "bridge_send_text", new_callable=AsyncMock)
     
     await send_setup_prompt("919999999999", "awaiting_oauth")
     mock_send.assert_called_once()

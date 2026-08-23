@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.models import PendingDecision, User
-from app.services.whatsapp_service import whatsapp_service
+from app.services.bridge_client import send_text as bridge_send_text
 
 logger = get_logger(__name__)
 
@@ -111,7 +111,7 @@ class PermissionService:
         owner_target = (bot_phone or settings.OWNER_WA_PHONE).lstrip("+")
         
         msg = _format_permission_message(action_type, proposed_action, code)
-        await whatsapp_service.send_text(owner_target, msg)
+        await bridge_send_text(owner_target, msg)
 
         logger.info("Created pending decision %s (%s) for %s", code, action_type, user.id)
         return decision
@@ -175,6 +175,51 @@ class PermissionService:
         if expired:
             await db.commit()
         return len(expired)
+
+    # ------------------------------------------------------------------
+    # Message-level permission cascade (multi-tenant moat)
+    # ------------------------------------------------------------------
+
+    async def decide(
+        self,
+        db: AsyncSession,
+        sender_phone: str,
+        message_text: str,
+        tenant_id: int | None = None,
+        is_group: bool = False,
+    ) -> dict:
+        """Decide what happens to an inbound WhatsApp message.
+
+        Returns {"action": "run"|"hold"|"deny", "needs_owner_approval": bool,
+                 "decision": PendingDecision | None, "user": User}
+
+        - Owner → run instantly.
+        - Authorized user (has_permission) → run.
+        - Stranger (no permission) → hold: create PendingDecision, notify owner.
+        """
+        phone = (sender_phone or "").lstrip("+")
+
+        result = await db.execute(select(User).where(User.wa_phone == phone))
+        user = result.scalar_one_or_none()
+
+        if user is None:
+            user = User(wa_phone=phone, tenant_id=tenant_id, has_permission=False)
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+
+        if user.is_owner or user.has_permission:
+            return {"action": "run", "needs_owner_approval": False, "decision": None, "user": user}
+
+        # Stranger → hold + ask the owner
+        decision = await self.request_permission(
+            db,
+            user,
+            action_type="message_task",
+            proposed_action={"text": (message_text or "")[:300], "is_group": is_group},
+            source_chat=phone,
+        )
+        return {"action": "hold", "needs_owner_approval": True, "decision": decision, "user": user}
 
 
 permission_service = PermissionService()

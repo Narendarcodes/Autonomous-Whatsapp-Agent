@@ -1,27 +1,33 @@
-"""HMAC verification and token encryption."""
-import hashlib
-import hmac
-
+"""Password hashing and token encryption."""
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
 
+# OWASP-recommended argon2id. Multi-tenant: a leak is high-impact.
+_ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
 
-def verify_openwa_signature(body: bytes, signature: str | None) -> bool:
-    """Verify OpenWA webhook HMAC-SHA256 signature.
 
-    Returns True if the signature is valid, or if no secret is configured
-    (development mode).
-    """
-    secret = settings.OPENWA_WEBHOOK_SECRET
-    if not secret:
-        return True  # dev mode: skip verification
-    if not signature:
+def hash_password(plain: str) -> str:
+    """argon2id hash for dashboard passwords."""
+    return _ph.hash(plain)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """Constant-time verify; returns False on any mismatch/corruption."""
+    try:
+        return _ph.verify(hashed, plain)
+    except (VerifyMismatchError, InvalidHashError, ValueError):
         return False
 
-    received = signature.replace("sha256=", "").strip()
-    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, received)
+
+def needs_rehash(hashed: str) -> bool:
+    """True if the hash params are below current policy (upgrade on login)."""
+    try:
+        return _ph.check_needs_rehash(hashed)
+    except Exception:
+        return False
 
 
 def _get_fernet() -> Fernet:

@@ -36,17 +36,22 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
 
     # OpenWA
-    OPENWA_BASE_URL: str = "http://openwa:2785"
-    OPENWA_API_KEY: str = ""
-    OPENWA_SESSION_ID: str = "my-session"
-    OPENWA_WEBHOOK_SECRET: str = ""
-    OPENWA_WEBHOOK_URL: str = "http://backend:8000/webhook/openwa"
     OWNER_WA_PHONE: str = ""
+
+    # Contacts ingest (Hermes -> backend server-to-server push). Empty = disabled.
+    CONTACT_INGEST_TOKEN: str = ""
     BOT_RELATIONSHIP_MODE: str = "self_chat"
 
     # Hermes Agent
     HERMES_BASE_URL: str = "http://hermes:8642"
     HERMES_API_KEY: str = "hermes_api_key_change_me"
+    # When True, outbound WhatsApp replies go through Hermes' native Baileys bridge
+    # (Evolution API container dropped). The dispatch session-id IS the chat target,
+    # so Hermes sends the model's response itself; omniWA stops calling Evolution.
+    HERMES_OWNS_WHATSAPP: bool = False
+    # Shared hermes_data volume mount (bridge.log / creds.json live here)
+    HERMES_DATA_DIR: str = "/opt/hermes_data"
+    HERMES_HEALTH_URL: str = "http://hermes:8642"
 
     # LiteLLM proxy
     LITELLM_BASE_URL: str = "http://litellm:4000"

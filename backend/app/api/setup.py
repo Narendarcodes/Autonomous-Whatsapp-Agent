@@ -1,19 +1,21 @@
-"""Evolution API setup endpoints — instance creation, QR display."""
+"""Setup & admin endpoints — dashboard pages, preferences, disconnect, API keys."""
 import os
 import asyncio
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Response, Request, Depends, Form, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, field_validator
 import re
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.auth import SESSION_COOKIE
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import cache_get, cache_set
 from app.core.logging import get_logger
-from app.services.whatsapp_service import INSTANCE_NAME, whatsapp_service, normalize_phone_number, validate_phone_number
-from app.models.models import User, AuditLog, ApiKey
+from app.services.phone_utils import normalize_phone_number, validate_phone_number
+from app.models.models import User, AuditLog, ApiKey, CustomerGoogleToken
 from app.core.security import decrypt_token
 from app.services.preferences_service import preferences_service
 from app.services.oauth_service import build_authorization_url
@@ -25,13 +27,21 @@ logger = get_logger(__name__)
 
 
 async def is_authenticated(request: Request) -> bool:
-    if not settings.ADMIN_PASSWORD:
-        return True
-    session_id = request.cookies.get("naru_session")
-    if not session_id:
-        return False
-    val = await cache_get(f"session:{session_id}")
-    return val == "1"
+    """Valid session cookie → authenticated. Falls back to legacy ADMIN_PASSWORD
+    single-user mode only while no DashboardUser rows exist (migration window)."""
+    sid = request.cookies.get(SESSION_COOKIE)
+    if sid:
+        val = await cache_get(f"dash_session:{sid}")
+        if val and ":" in val:
+            return True
+    # Legacy fallback (pre-multi-tenant deployments)
+    if settings.ADMIN_PASSWORD:
+        legacy = request.cookies.get("naru_session")
+        if legacy:
+            lval = await cache_get(f"session:{legacy}")
+            if lval == "1":
+                return True
+    return False
 
 
 async def verify_api_admin(request: Request):
@@ -50,22 +60,68 @@ async def login_page(request: Request) -> Response:
 
 
 @router.post("/login")
-async def login_submit(password: str = Form(...)) -> Response:
-    if password == settings.ADMIN_PASSWORD:
-        session_id = str(uuid.uuid4())
-        await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
-        response = RedirectResponse(url="/dashboard", status_code=303)
-        response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
-        return response
+async def login_submit(
+    request: Request,
+    password: str = Form(...),
+    email: str = Form(""),
+) -> Response:
+    """Multi-tenant login: email + password against dashboard_users (argon2).
+
+    Falls back to legacy ADMIN_PASSWORD when no DashboardUser exists yet
+    or the table itself is missing (pre-migration DB).
+    """
+    from app.core.auth import create_session, set_session_cookie, SESSION_COOKIE
+    from app.core.security import verify_password, needs_rehash, hash_password
+    from app.models.models import DashboardUser
+
+    try:
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(select(DashboardUser).where(DashboardUser.email == email.strip().lower()))
+            dash_user = res.scalar_one_or_none()
+
+            if dash_user and verify_password(password, dash_user.password_hash):
+                if needs_rehash(dash_user.password_hash):
+                    dash_user.password_hash = hash_password(password)
+                    await db.commit()
+                sid = await create_session(dash_user.tenant_id, dash_user.id)
+                response = RedirectResponse(url="/dashboard", status_code=303)
+                set_session_cookie(response, sid)
+                return response
+    except Exception:
+        pass  # pre-migration DB — fall through to legacy admin password
+
+    # Legacy single-owner fallback (no dashboard users provisioned yet)
+    if not email and password == settings.ADMIN_PASSWORD:
+        try:
+            async with AsyncSessionLocal() as db:
+                count_res = await db.execute(select(func.count()).select_from(DashboardUser))
+                if (count_res.scalar() or 0) == 0:
+                    session_id = str(uuid.uuid4())
+                    await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
+                    response = RedirectResponse(url="/dashboard", status_code=303)
+                    response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
+                    return response
+        except Exception:
+            # Pre-migration DB (table missing) — allow legacy admin password
+            session_id = str(uuid.uuid4())
+            await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
+            response = RedirectResponse(url="/dashboard", status_code=303)
+            response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
+            return response
+
     return RedirectResponse(url="/login?error=true", status_code=303)
 
 
 @router.get("/logout")
 async def logout(request: Request) -> Response:
-    session_id = request.cookies.get("naru_session")
+    from app.core.auth import destroy_session, clear_session_cookie, SESSION_COOKIE
+
+    await destroy_session(request)          # instant Redis revoke
+    legacy = request.cookies.get("naru_session")
+    if legacy:
+        await cache_set(f"session:{legacy}", "", ttl_seconds=1)
     response = RedirectResponse(url="/login", status_code=302)
-    if session_id:
-        await cache_set(f"session:{session_id}", "", ttl_seconds=1)
+    clear_session_cookie(response)
     response.delete_cookie("naru_session")
     return response
 
@@ -79,103 +135,6 @@ async def setup_page(request: Request) -> Response:
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
     return Response(content=html, media_type="text/html")
-
-
-@router.get("/setup/qr-status")
-async def qr_status(background_tasks: BackgroundTasks, dependencies=Depends(verify_api_admin)) -> dict:
-    info = await whatsapp_service.instance_status()
-    if info is None:
-        raise HTTPException(status_code=503, detail="Evolution API unreachable")
-    
-    state = info.get("instance", {}).get("state")
-    qr_data = await cache_get("whatsapp:qr_code")
-    
-    profile_pic = None
-    phone = None
-    if state == "open":
-        phone = await whatsapp_service.get_bot_phone()
-        if phone:
-            profile_pic = await whatsapp_service.get_profile_picture(phone)
-            background_tasks.add_task(whatsapp_service.sync_contacts)
-            
-            # Dynamically synchronize owner phone to connected primary session
-            phone_clean = normalize_phone_number(phone)
-            if phone_clean:
-                settings.OWNER_WA_PHONE = phone_clean
-                async with AsyncSessionLocal() as db:
-                    owner_res = await db.execute(select(User).where(User.is_owner == True))
-                    current_owner = owner_res.scalar_one_or_none()
-                    
-                    if not current_owner or current_owner.wa_phone != phone_clean:
-                        dup_res = await db.execute(select(User).where(User.wa_phone == phone_clean))
-                        dup_user = dup_res.scalar_one_or_none()
-                        
-                        if current_owner:
-                            if dup_user and dup_user.id != current_owner.id:
-                                await db.delete(dup_user)
-                                await db.flush()
-                            current_owner.wa_phone = phone_clean
-                            current_owner.has_permission = True
-                            await db.commit()
-                            logger.info("setup.py qr_status: Dynamically updated owner phone to connected primary phone: %s", phone_clean)
-                        else:
-                            if dup_user:
-                                dup_user.is_owner = True
-                                dup_user.has_permission = True
-                                await db.commit()
-                                logger.info("setup.py qr_status: Dynamically promoted existing user %s to owner", phone_clean)
-                            else:
-                                new_owner = User(
-                                    wa_phone=phone_clean,
-                                    is_owner=True,
-                                    has_permission=True,
-                                    display_name="You (Owner)"
-                                )
-                                db.add(new_owner)
-                                await db.commit()
-                                logger.info("setup.py qr_status: Dynamically created owner user from connected phone: %s", phone_clean)
-
-            
-    return {
-        "state": state,
-        "instance": INSTANCE_NAME,
-        "has_qr": bool(qr_data),
-        "qr_url": f"{settings.BASE_URL}/setup/qr-image",
-        "profile_pic": profile_pic,
-        "phone": phone
-    }
-
-
-@router.get("/setup/qr-image")
-async def qr_image(dependencies=Depends(verify_api_admin)) -> Response:
-    """Serve the latest QR code stored from the QRCODE_UPDATED webhook."""
-    import base64
-    qr_data = await cache_get("whatsapp:qr_code")
-    if not qr_data:
-        raise HTTPException(
-            status_code=404,
-            detail="No QR code available yet. The instance is not in connecting state. "
-                   "Call POST /setup/create-instance first, then refresh this page within 60s."
-        )
-    # Evolution sends "data:image/png;base64,<data>" or just the base64 string
-    if "base64," in qr_data:
-        _, encoded = qr_data.split("base64,", 1)
-    else:
-        encoded = qr_data
-    try:
-        img_bytes = base64.b64decode(encoded)
-        return Response(content=img_bytes, media_type="image/png")
-    except Exception:
-        # Maybe it's a plain QR string, not base64 image — return as text
-        return Response(content=qr_data.encode(), media_type="text/plain")
-
-
-@router.post("/setup/create-instance")
-async def create_instance(dependencies=Depends(verify_api_admin)) -> dict:
-    ok = await whatsapp_service.create_instance()
-    if not ok:
-        raise HTTPException(status_code=502, detail="Instance creation failed")
-    return {"status": "created", "instance": INSTANCE_NAME}
 
 
 @router.get("/dashboard")
@@ -192,7 +151,10 @@ async def dashboard(request: Request) -> Response:
 class PreferencesPayload(BaseModel):
     bot_name: str
     timezone: str
-    bot_mode: str
+    # v3: connection mode is owned by the Hermes bridge config
+    # (PUT /api/pairing/bridge), not dashboard preferences. Kept optional for
+    # backward compatibility with legacy clients.
+    bot_mode: str | None = None
     quiet_hours_start: str
     quiet_hours_end: str
     stt_provider: str
@@ -265,73 +227,24 @@ async def save_preferences(payload: PreferencesPayload, dependencies=Depends(ver
                 raise HTTPException(status_code=404, detail="Owner user not found. Scan WhatsApp QR first.")
         
 
-        if payload.bot_mode == "self_chat":
-            connected_phone = await whatsapp_service.get_bot_phone()
-            if not connected_phone:
-                if owner.wa_phone:
-                    connected_clean = owner.wa_phone
-                else:
-                    raise HTTPException(status_code=400, detail="WhatsApp session not connected. Please connect WhatsApp first.")
-            else:
-                connected_clean = normalize_phone_number(connected_phone)
-            
-            if owner.wa_phone != connected_clean:
-                dup_res = await db.execute(
-                    select(User).where(User.wa_phone == connected_clean)
-                )
-                dup_user = dup_res.scalar_one_or_none()
-                if dup_user and dup_user.id != owner.id:
-                    await db.delete(dup_user)
-                    await db.flush()
-            owner.wa_phone = connected_clean
-            settings.OWNER_WA_PHONE = connected_clean
-            payload.owner_phone = connected_clean
-            payload.bot_phone = connected_clean
-        elif payload.bot_mode == "dual_number":
-            # Note: The agent phone LINKING (QR scan + Evolution API instance creation) is handled
-            # by POST /api/agent-phone/request and GET /api/agent-phone/qr-status.
-            # This endpoint only validates + saves the agent phone value that was already linked.
-            
-            connected_phone = await whatsapp_service.get_bot_phone()
-            if not connected_phone:
-                if owner.wa_phone:
-                    connected_clean = owner.wa_phone
-                else:
-                    raise HTTPException(status_code=400, detail="WhatsApp session not connected. Please connect WhatsApp first.")
-            else:
-                connected_clean = normalize_phone_number(connected_phone)
-            
-            if owner.wa_phone != connected_clean:
-                dup_res = await db.execute(
-                    select(User).where(User.wa_phone == connected_clean)
-                )
-                dup_user = dup_res.scalar_one_or_none()
-                if dup_user and dup_user.id != owner.id:
-                    await db.delete(dup_user)
-                    await db.flush()
-            owner.wa_phone = connected_clean
-            settings.OWNER_WA_PHONE = connected_clean
-            payload.owner_phone = connected_clean
+        # v3: relationship mode is Hermes bridge configuration (see
+        # /api/pairing/bridge). Identity stays pinned to the owner user record.
+        if payload.bot_mode is not None and payload.owner_phone:
+            clean = normalize_phone_number(payload.owner_phone)
+            if clean:
+                settings.OWNER_WA_PHONE = clean
 
-            
-            if not payload.bot_phone:
-                raise HTTPException(status_code=400, detail="Agent Phone must be configured")
-            
-            validation = validate_phone_number(payload.bot_phone)
-            if validation["is_valid"]:
-                payload.bot_phone = validation["digits"]
-            else:
-                raise HTTPException(status_code=400, detail=validation.get("error", "Invalid agent phone number."))
-        
         await preferences_service.set(owner.id, "bot_name", payload.bot_name)
-        await preferences_service.set(owner.id, "bot_mode", payload.bot_mode)
+        if payload.bot_mode is not None:  # v3: mode lives in Hermes bridge config now
+            await preferences_service.set(owner.id, "bot_mode", payload.bot_mode)
         await preferences_service.set(owner.id, "quiet_hours_start", payload.quiet_hours_start)
         await preferences_service.set(owner.id, "quiet_hours_end", payload.quiet_hours_end)
         await preferences_service.set(owner.id, "stt_provider", payload.stt_provider)
         await preferences_service.set(owner.id, "tts_provider", payload.tts_provider)
         await preferences_service.set(owner.id, "tts_voice", payload.tts_voice)
         await preferences_service.set(owner.id, "owner_phone", payload.owner_phone or "")
-        await preferences_service.set(owner.id, "bot_phone", payload.bot_phone or "")
+        if payload.bot_phone is not None:
+            await preferences_service.set(owner.id, "bot_phone", payload.bot_phone or "")
         await preferences_service.set(owner.id, "owner_name", payload.owner_name or "You (Owner)")
         
         owner.timezone = payload.timezone
@@ -353,11 +266,87 @@ async def google_status(dependencies=Depends(verify_api_admin)) -> dict:
         return {"connected": True}
 
 
+@router.get("/api/google-connection-status")
+async def google_connection_status(request: Request) -> dict:
+    """Tenant-aware Google connection status for the dashboard Connect card.
+
+    Reads the tenant from the dashboard session; checks CustomerGoogleToken
+    (the multi-tenant source of truth), NOT the legacy owner User row.
+    """
+    from app.core.auth import get_principal
+
+    principal = await get_principal(request)  # 401 if no valid session
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(CustomerGoogleToken).where(
+                CustomerGoogleToken.tenant_id == principal.tenant_id
+            )
+        )
+        tok = result.scalars().first()
+        if tok is None:
+            return {"connected": False}
+        return {
+            "connected": True,
+            "email": tok.email,
+            "scopes": (tok.scopes or "").split(),
+        }
+
+
+class ChangePasswordPayload(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/api/change-password")
+async def change_password(payload: ChangePasswordPayload, request: Request) -> dict:
+    """Rotate the authenticated dashboard user's password (argon2)."""
+    from app.core.auth import get_principal
+    from app.models.models import DashboardUser
+    from app.services.auth_service import update_password
+
+    principal = await get_principal(request)  # 401 without session
+    try:
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(
+                select(DashboardUser).where(DashboardUser.id == principal.dashboard_user_id)
+            )
+            user = res.scalar_one_or_none()
+            if not user:
+                raise HTTPException(status_code=401, detail="Account no longer exists")
+
+            ok = await update_password(db, user, payload.current_password, payload.new_password)
+            if not ok:
+                raise HTTPException(status_code=403, detail="Current password is incorrect")
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"status": "changed"}
+
+
 @router.post("/setup/disconnect")
 async def disconnect_whatsapp(dependencies=Depends(verify_api_admin)) -> dict:
-    ok = await whatsapp_service.delete_instance()
-    if not ok:
-        raise HTTPException(status_code=502, detail="Failed to delete instance in openwa adapter")
+    """v3: unlink the Hermes Baileys session (Evolution API dropped).
+
+    Deletes the bridge session directory on the shared hermes_data volume and
+    restarts the hermes container; it comes back unpaired and the dashboard
+    shows a fresh QR for re-linking.
+    """
+    import shutil
+
+    from app.services.whatsapp_pairing_service import whatsapp_paths
+
+    paths = whatsapp_paths()
+    creds_path = Path(paths["creds"])
+    if creds_path.exists():
+        shutil.rmtree(str(creds_path.parent), ignore_errors=True)
+        logger.info("Deleted WhatsApp bridge session at %s", creds_path.parent)
+
+    from app.services.bridge_config_service import restart_hermes
+
+    restarted = await restart_hermes()
+    if not creds_path.exists() and not restarted:
+        raise HTTPException(status_code=502, detail="Failed to disconnect WhatsApp session")
     return {"status": "disconnected"}
 
 
@@ -412,272 +401,6 @@ async def get_system_status(dependencies=Depends(verify_api_admin)) -> dict:
 
 # ==================== AGENT PHONE SETUP ENDPOINTS ====================
 
-
-@router.get("/api/agent/status")
-async def get_agent_status(dependencies=Depends(verify_api_admin)) -> dict:
-    """Return live connection state of the agent (secondary) Evolution API instance.
-    
-    Returns:
-      - state: "open" | "connecting" | "close" | "unknown" | "not_configured"
-      - bot_phone: configured agent phone number (empty if not configured)
-      - message: human-readable description
-    """
-    from app.services.agent_instance_service import agent_instance_service
-
-    # Check if any agent phone is configured first
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.is_owner == True))
-        owner = result.scalar_one_or_none()
-        if not owner:
-            return {"state": "not_configured", "bot_phone": "", "message": "Owner not connected yet."}
-        bot_phone = await preferences_service.get(owner.id, "bot_phone") or ""
-        bot_mode = await preferences_service.get(owner.id, "bot_mode") or settings.BOT_RELATIONSHIP_MODE
-
-    if not bot_phone or bot_mode != "dual_number":
-        return {"state": "not_configured", "bot_phone": "", "message": "No agent phone configured."}
-
-    # Query the live connection state from Evolution API
-    try:
-        status = await agent_instance_service.get_agent_instance_status()
-        state = status.get("state", "unknown")
-        msg_map = {
-            "open": f"Agent +{bot_phone} is connected and active.",
-            "connecting": f"Agent +{bot_phone} is connecting. Please wait...",
-            "close": f"Agent +{bot_phone} is disconnected. Please reconnect.",
-            "unknown": f"Agent status unknown. The session may have been removed.",
-        }
-        return {
-            "state": state,
-            "bot_phone": bot_phone,
-            "message": msg_map.get(state, f"Agent state: {state}"),
-        }
-    except Exception as exc:
-        logger.error("get_agent_status error: %s", exc)
-        return {
-            "state": "unknown",
-            "bot_phone": bot_phone,
-            "message": "Unable to reach Evolution API to check agent status.",
-        }
-
-
-
-
-class AgentPhoneRequestPayload(BaseModel):
-    phone: str
-
-
-@router.post("/api/agent-phone/request")
-async def request_agent_phone(payload: AgentPhoneRequestPayload, dependencies=Depends(verify_api_admin)) -> dict:
-    """Validate agent phone, create agent Evolution API instance, return QR code."""
-    from app.services.agent_instance_service import agent_instance_service
-    
-    # --- Phone Validation ---
-    validation = validate_phone_number(payload.phone)
-    if not validation["is_valid"]:
-        raise HTTPException(status_code=400, detail=validation.get("error", "Invalid phone number."))
-    
-    phone_digits = validation["digits"]
-    country_code = validation.get("country_code", "")
-    
-    # --- Check for existing configured bot_phone ---
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.is_owner == True))
-        owner = result.scalar_one_or_none()
-        if not owner:
-            raise HTTPException(status_code=404, detail="Owner not found. Connect WhatsApp first.")
-        owner_id = owner.id
-    
-    existing_bot_phone = await preferences_service.get(owner_id, "bot_phone")
-    existing_clean = normalize_phone_number(existing_bot_phone) if existing_bot_phone else ""
-    
-    # --- Store pending phone ---
-    await cache_set("whatsapp:agent_pending_phone", phone_digits, ttl_seconds=600)
-    
-    # --- Create or reconnect agent instance ---
-    # Disconnect/delete any existing agent session instance first so we start fresh
-    await agent_instance_service.delete_agent_instance()
-    await asyncio.sleep(2.0)  # Give Evolution API time to cleanly release the session
-    
-    qr = await agent_instance_service.create_agent_instance()
-    if not qr:
-        raise HTTPException(status_code=502, detail="Failed to create agent WhatsApp instance. Check Evolution API.")
-    
-    # --- Forward QR instructions to owner's WhatsApp and target agent's WhatsApp ---
-    try:
-        owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-        if owner_phone:
-            qr_msg_owner = (
-                f"🤖 *Naru Agent Setup*\n\n"
-                f"Please link the Agent Chat interface (+{phone_digits}) under the Owner account (+{owner_phone}) by scanning the QR code in the Naru dashboard.\n\n"
-                f"Guidelines:\n"
-                f"1️⃣ Open WhatsApp on the *second phone* (+{phone_digits})\n"
-                f"2️⃣ Tap ⋮ *Menu* → *Linked Devices* → *Link a Device*\n"
-                f"3️⃣ Scan the QR code shown in your Naru dashboard\n\n"
-                f"⏳ The QR expires in ~5 minutes. Check your dashboard for the QR."
-            )
-            await whatsapp_service.send_text(owner_phone, qr_msg_owner, force_primary=True)
-    except Exception as e:
-        logger.warning("Failed to send QR notification to owner: %s", e)
-
-    try:
-        owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-        qr_msg_agent = (
-            f"🤖 *Naru Agent Setup*\n\n"
-            f"Please link this Agent Chat interface (+{phone_digits}) under the Owner account (+{owner_phone}) by scanning the QR code in the Naru dashboard.\n\n"
-            f"Guidelines:\n"
-            f"1️⃣ Open WhatsApp on this phone (+{phone_digits})\n"
-            f"2️⃣ Tap ⋮ *Menu* → *Linked Devices* → *Link a Device*\n"
-            f"3️⃣ Scan the QR code shown in your Naru dashboard\n\n"
-            f"⏳ The QR expires in ~5 minutes. Check your dashboard for the QR."
-        )
-        await whatsapp_service.send_text(phone_digits, qr_msg_agent, force_primary=True)
-    except Exception as e:
-        logger.warning("Failed to send QR notification to target agent phone: %s", e)
-    
-    return {
-        "status": "qr_ready",
-        "qr": qr,
-        "phone": phone_digits,
-        "country_code": country_code,
-        "existing_bot_phone": existing_clean or None,
-        "message": f"QR code ready. Open WhatsApp on +{phone_digits} → Linked Devices → Link a Device → scan QR."
-    }
-
-
-@router.get("/api/agent-phone/qr-status")
-async def agent_phone_qr_status(dependencies=Depends(verify_api_admin)) -> dict:
-    """Poll agent instance connection status. On connect: save bot_phone, whitelist, notify owner."""
-    from app.services.agent_instance_service import agent_instance_service
-    
-    status = await agent_instance_service.get_agent_instance_status()
-    state = status.get("state", "unknown")
-    
-    if state == "open":
-        # Instance connected — fetch the linked phone
-        linked_phone = await agent_instance_service.get_agent_phone()
-        pending_phone = await cache_get("whatsapp:agent_pending_phone")
-        phone_to_use = linked_phone or pending_phone or ""
-        
-        if phone_to_use:
-            phone_clean = normalize_phone_number(phone_to_use) or phone_to_use
-            
-            # If pending_phone is not set in Redis, it means we already completed the setup flow
-            # for this link request (or it wasn't initiated).
-            if not pending_phone:
-                return {"state": "open", "phone": phone_clean, "message": f"Agent number +{phone_clean} is now active!"}
-            
-            # Immediately clear the pending cache key to lock/prevent concurrent or duplicate poll calls from executing this block
-            await cache_set("whatsapp:agent_pending_phone", "", ttl_seconds=1)
-            
-            async with AsyncSessionLocal() as db:
-                owner_res = await db.execute(select(User).where(User.is_owner == True))
-                owner = owner_res.scalar_one_or_none()
-                if owner:
-                    # Save bot_phone preference
-                    await preferences_service.set(owner.id, "bot_phone", phone_clean)
-                    await preferences_service.set(owner.id, "bot_mode", "dual_number")
-                    
-                    # Whitelist the agent number in DB
-                    agent_res = await db.execute(select(User).where(User.wa_phone == phone_clean))
-                    agent_user = agent_res.scalar_one_or_none()
-                    if not agent_user:
-                        agent_user = User(
-                            wa_phone=phone_clean,
-                            is_owner=False,
-                            has_permission=True,
-                            display_name="Agent Chat"
-                        )
-                        db.add(agent_user)
-                    else:
-                        agent_user.has_permission = True
-                        agent_user.display_name = "Agent Chat"
-                    await db.commit()
-                    
-                    # Send connection notifications to owner (X) and start agent chat (Y)
-                    try:
-                        owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-                        if owner_phone:
-                            # 1. Send confirmation message in self-chat on Account X
-                            await whatsapp_service.send_text(
-                                owner_phone,
-                                f"the account +{phone_clean} is connected as a chat interface",
-                                force_primary=True
-                            )
-                            
-                            # 2. Send greeting message from Account Y (agent) to Account X (owner) to start the agent chat
-                            greeting_msg = (
-                                f"🤖 *Naru AI Agent Connected*\n\n"
-                                f"Hello! I am your AI assistant. I have successfully connected as your agent chat interface (+{phone_clean}) and am ready to receive your commands and handle your tasks!"
-                            )
-                            await agent_instance_service.send_via_agent(owner_phone, greeting_msg)
-                    except Exception as e:
-                        logger.warning("Failed to send agent connection notifications: %s", e)
-                    
-                    logger.info("Agent phone %s linked and whitelisted", phone_clean)
-                    
-                    return {"state": "open", "phone": phone_clean, "message": f"Agent number +{phone_clean} is now active!"}
-        
-        return {"state": "open", "phone": "", "message": "Connected but phone not yet resolved."}
-    
-    # Not connected yet — return state + fresh QR
-    return {
-        "state": state,
-        "qr": status.get("qr", ""),
-        "message": "Waiting for QR scan..."
-    }
-
-
-@router.post("/api/agent-phone/cancel")
-async def cancel_agent_phone(dependencies=Depends(verify_api_admin)) -> dict:
-    """Cancel the pending agent phone link request. 
-    Resets the bot_mode to self_chat and clears bot_phone ONLY if no existing bot phone was configured
-    or if we are not in the middle of a replacement request.
-    """
-    from app.services.agent_instance_service import agent_instance_service
-    
-    # Drop any pending/newly created agent session instance
-    await agent_instance_service.delete_agent_instance()
-    
-    # Get pending phone from cache
-    pending_phone = await cache_get("whatsapp:agent_pending_phone")
-    pending_phone_clean = normalize_phone_number(pending_phone) if pending_phone else ""
-    
-    message = "Agent setup canceled."
-    # Reset preferences to self_chat ONLY if we didn't have a previously successfully saved bot_phone.
-    # If we had a previously saved bot_phone, we keep the preferences as they were!
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.is_owner == True))
-        owner = result.scalar_one_or_none()
-        if owner:
-            old_bot_phone = await preferences_service.get(owner.id, "bot_phone")
-            old_bot_phone_clean = normalize_phone_number(old_bot_phone) if old_bot_phone else ""
-            
-            # If there was no previous bot phone configured, or if we are NOT replacing (i.e. pending_phone is empty or matches old_bot_phone)
-            is_replacing = old_bot_phone_clean and pending_phone_clean and pending_phone_clean != old_bot_phone_clean
-            
-            if not is_replacing:
-                await preferences_service.set(owner.id, "bot_phone", "")
-                await preferences_service.set(owner.id, "bot_mode", "self_chat")
-                
-                # Find and disable the Agent Chat permission status
-                result_agent = await db.execute(
-                    select(User).where(User.display_name == "Agent Chat")
-                )
-                agent_users = result_agent.scalars().all()
-                for au in agent_users:
-                    au.has_permission = False
-                await db.commit()
-                message = "Agent setup canceled. Switched to Self Chat mode."
-            else:
-                message = f"Agent setup canceled. Preserved previous agent number +{old_bot_phone_clean}."
-            
-    # Clear caches
-    await cache_set("whatsapp:agent_pending_phone", "", ttl_seconds=1)
-    
-    return {"status": "success", "message": message}
-
-
-# ==================== DYNAMIC API KEY MANAGEMENT ENDPOINTS ====================
 
 class ApiKeyCreatePayload(BaseModel):
     name: str
