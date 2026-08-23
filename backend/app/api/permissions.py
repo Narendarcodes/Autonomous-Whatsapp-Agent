@@ -273,47 +273,8 @@ async def delete_permission(phone: str = Query(..., description="User phone to d
 
 
 
-@router.post("/api/contacts/sync")
-async def sync_contacts_endpoint() -> dict:
-    """Report the cached contact-directory size (v3: no live directory source).
-
-    The Evolution API contact store is gone; the cache reflects numbers seen
-    via pairing and ACL activity. Kept for dashboard compatibility.
-    """
-    import json as _json
-    from app.db.redis_client import cache_get
-    cached = await cache_get("whatsapp:contacts_cache")
-    count = 0
-    if cached:
-        try:
-            count = len(_json.loads(cached))
-        except Exception:
-            count = 0
-    return {"status": "success", "count": count}
-
-
-@router.get("/api/contacts/search")
-async def search_contacts(q: str = Query("", description="Search query")) -> list[dict]:
-    """Search and autocomplete whitelisted user contacts."""
-    from app.db.redis_client import cache_get
-    import json
-
-    q_clean = q.strip()
-    if not q_clean:
-        return []
-
-    contacts_json = await cache_get("whatsapp:contacts_cache")
-    if contacts_json:
-        try:
-            contacts = json.loads(contacts_json)
-        except Exception:
-            contacts = []
-    else:
-        contacts = []
-
-    q_lower = q_clean.lower()
-    results = []
-    for c in contacts:
-        if q_lower in c["phone"] or q_lower in c["name"].lower():
-            results.append(c)
-    return results[:10]
+# NOTE: legacy /api/contacts/sync + /api/contacts/search (Evolution-era Redis
+# cache) were REMOVED — they shadowed the live contacts backbone in
+# app/api/contacts.py (route-registration order made the dead cache win).
+# Dashboard compatibility: POST /api/contacts/sync now lives there and reports
+# the observed-contacts count; GET /api/contacts/search queries the DB.

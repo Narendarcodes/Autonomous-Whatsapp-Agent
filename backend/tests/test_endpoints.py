@@ -164,31 +164,28 @@ async def test_oauth_callback_expired_state():
 
 @pytest.mark.asyncio
 async def test_contacts_search(db_session):
-    """Verify that contact search autocomplete matches by name or phone."""
-    from app.db.redis_client import cache_set
-    import json
-    
-    # Mock contacts list
-    mock_contacts = [
-        {"phone": "12025550143", "name": "John Doe", "jid": "12025550143@s.whatsapp.net"},
-        {"phone": "919999999999", "name": "Saketh Suman", "jid": "919999999999@s.whatsapp.net"}
-    ]
-    await cache_set("whatsapp:contacts_cache", json.dumps(mock_contacts), ttl_seconds=300)
-    
-    # 1. Search by name query
+    """Contact search matches by name or phone over the observed_contacts DB."""
+    from app.api.contacts import _upsert_contacts, ContactIn
+
+    await _upsert_contacts([
+        ContactIn(phone="12025550143", name="John Doe"),
+        ContactIn(phone="919999999999", name="Saketh Suman"),
+    ])
+
     async with await get_auth_client() as ac:
+        # 1. Search by name query
         resp = await ac.get("/api/contacts/search?q=John")
         assert resp.status_code == 200
         results = resp.json()
         assert len(results) == 1
-        assert results[0]["phone"] == "12025550143"
-        
+        assert results[0]["wa_phone"] == "12025550143"
+
         # 2. Search by phone query
         resp2 = await ac.get("/api/contacts/search?q=919999")
         assert resp2.status_code == 200
         results2 = resp2.json()
         assert len(results2) == 1
-        assert results2[0]["name"] == "Saketh Suman"
+        assert results2[0]["display_name"] == "Saketh Suman"
 
 
 @pytest.mark.asyncio
@@ -362,16 +359,13 @@ async def test_delete_permission_endpoint(db_session):
 
 
 @pytest.mark.asyncio
-async def test_sync_contacts_endpoint(db_session, monkeypatch):
-    """v3: /api/contacts/sync reports the cached directory size (no live source)."""
-    from app.db.redis_client import cache_set
-    import json as _json
+async def test_sync_contacts_endpoint(db_session):
+    """v3.1: /api/contacts/sync reports the observed-identities count."""
+    from app.api.contacts import _upsert_contacts, ContactIn
 
-    await cache_set(
-        "whatsapp:contacts_cache",
-        _json.dumps([{"phone": "12025550999", "name": "Cached User", "jid": "12025550999@s.whatsapp.net"}]),
-        ttl_seconds=60,
-    )
+    await _upsert_contacts([
+        ContactIn(phone="12025550999", name="Observed User"),
+    ])
 
     async with await get_auth_client() as ac:
         resp = await ac.post("/api/contacts/sync")

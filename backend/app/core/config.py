@@ -37,6 +37,9 @@ class Settings(BaseSettings):
 
     # OpenWA
     OWNER_WA_PHONE: str = ""
+
+    # Contacts ingest (Hermes -> backend server-to-server push). Empty = disabled.
+    CONTACT_INGEST_TOKEN: str = ""
     BOT_RELATIONSHIP_MODE: str = "self_chat"
 
     # Hermes Agent

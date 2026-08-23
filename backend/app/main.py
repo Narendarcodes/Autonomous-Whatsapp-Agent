@@ -6,8 +6,9 @@ import os
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from sqlalchemy import text
 
-from app.api import health, oauth, permissions, setup, whatsapp_pairing
+from app.api import contacts, health, oauth, permissions, setup, whatsapp_pairing
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.redis_client import close_redis, ensure_consumer_group, get_redis
@@ -47,8 +48,23 @@ async def lifespan(app: FastAPI):
                     updated_at TIMESTAMPTZ DEFAULT NOW()
                 )
             """))
+            await db.execute(text("""
+                CREATE TABLE IF NOT EXISTS observed_contacts (
+                    id UUID PRIMARY KEY,
+                    tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+                    wa_phone VARCHAR(32) NOT NULL,
+                    lid VARCHAR(64),
+                    display_name VARCHAR(128),
+                    source_chats JSON DEFAULT '[]',
+                    first_seen_at TIMESTAMPTZ DEFAULT NOW(),
+                    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+                    CONSTRAINT uq_observed_tenant_phone UNIQUE (tenant_id, wa_phone)
+                )
+            """))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS ix_observed_contacts_wa_phone ON observed_contacts (wa_phone)"))
+            await db.execute(text("CREATE INDEX IF NOT EXISTS ix_observed_contacts_tenant_id ON observed_contacts (tenant_id)"))
             await db.commit()
-            logger.info("Database migration check: api_keys table created or verified")
+            logger.info("Database migration check: api_keys/observed_contacts tables verified")
             
             # Rebuild LiteLLM configuration on startup to propagate active DB keys
             try:
@@ -179,6 +195,7 @@ app.include_router(health.router, tags=["health"])
 app.include_router(setup.router, tags=["setup"])
 app.include_router(oauth.router, tags=["oauth"])
 app.include_router(permissions.router, tags=["permissions"])
+app.include_router(contacts.router, prefix="/api/contacts", tags=["contacts"])
 app.include_router(whatsapp_pairing.router, prefix="/api/pairing", tags=["pairing"])
 
 

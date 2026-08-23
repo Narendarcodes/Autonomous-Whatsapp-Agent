@@ -19,6 +19,32 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
 
 
+class ObservedContact(Base):
+    """A WhatsApp identity omniWA has seen in DMs or allowed groups.
+
+    Fed by Hermes contact-ingest pushes (token-guarded); powers dashboard
+    contact search and one-click allowlisting. Replaces the Evolution-era
+    Redis contacts cache.
+    """
+
+    __tablename__ = "observed_contacts"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4()))
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=False)
+    wa_phone: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    lid: Mapped[str | None] = mapped_column(String(64), index=True)
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    source_chats: Mapped[list] = mapped_column(JSON, default=list)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "wa_phone", name="uq_observed_tenant_phone"),
+    )
+
+
 class User(Base):
     __tablename__ = "users"
 

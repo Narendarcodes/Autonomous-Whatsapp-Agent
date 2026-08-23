@@ -1,0 +1,123 @@
+<!--
+  omniWA landing — design contract (see DESIGN.md alongside this file)
+  THESIS: WhatsApp's own marketing voice. Cream paper, black ink, one green pill.
+  Refuses the dark-neon SaaS hero this category always ships.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>omniWA — Your business, on WhatsApp, on autopilot</title>
+  <meta name="description" content="omniWA turns WhatsApp into your hardest-working employee. Owner-approved access, Google Workspace built in, fully self-hosted." />
+  <meta property="og:title" content="omniWA — Your business, on WhatsApp, on autopilot" />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="stylesheet" href="css/style.css?v=5" />
+  <link rel="stylesheet" href="css/phone.css?v=5" />
+  <script type="importmap">
+  {
+    "imports": {
+      "gsap": "https://esm.sh/gsap@3.12.5",
+      "gsap/ScrollTrigger": "https://esm.sh/gsap@3.12.5/ScrollTrigger",
+      "lenis": "https://esm.sh/lenis@1.1.14",
+      "three": "https://esm.sh/three@0.169.0"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- NAV — cream, flat, hairline only -->
+  <header class="nav" id="nav">
+    <div class="container nav__inner">
+      <a href="#top" class="brand" aria-label="omniWA home">
+        <img src="assets/logo.svg" alt="" class="brand__mark" />
+        <span>omniWA</span>
+      </a>
+      <nav class="nav__links">
+        <a href="#how">How it works</a>
+        <a href="#demo">Demo</a>
+      </nav>
+      <a href="#cta" class="pill pill--primary">Get omniWA</a>
+    </div>
+  </header>
+
+  <!-- HERO — split, asymmetric. Left: type + one green pill. Right: CSS-3D iPhone. -->
+  <section class="hero" id="top">
+    <div class="blueprint" aria-hidden="true"></div>
+
+    <div class="container hero__grid">
+      <div class="hero__copy">
+        <h1 class="hero__title">Your business,<br />on WhatsApp,<br />
+          <span class="sketch-underline">on autopilot.</span>
+        </h1>
+        <p class="hero__sub">An AI employee that lives in your WhatsApp.
+          It books the meeting, finds the file, answers the customer —
+          and not a single stranger gets past your approval.</p>
+        <div class="hero__actions">
+          <a href="#cta" class="pill pill--primary">Get omniWA free</a>
+          <a href="#demo" class="pill pill--ghost">See it work</a>
+        </div>
+        <p class="hero__note">Self-hosted &middot; Your keys &middot; No per-seat fees</p>
+      </div>
+      <div class="hero__phone-zone" id="phone-hero" aria-hidden="true"></div>
+    </div>
+
+    <!-- sketchbook annotation -->
+    <svg class="doodle doodle--hero" viewBox="0 0 120 60" fill="none" aria-hidden="true">
+      <path d="M4 50 C 30 10, 70 6, 112 22" stroke="#1c1e21" stroke-width="2" stroke-linecap="round"/>
+      <path d="M104 14 L 114 23 L 101 28" stroke="#1c1e21" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </section>
+
+  <!-- HOW IT WORKS — numbered rows, ink dividers -->
+  <section class="how section" id="how">
+    <div class="container how__cols">
+      <h2 class="h2">Four minutes to a<br />full-time employee.</h2>
+      <ol class="steps">
+        <li class="step reveal"><span class="step__n">01</span><div><h3>Scan the QR</h3><p>Your number stays yours. The bot links to it like a second device — no SIM swap, no new line.</p></div></li>
+        <li class="step reveal"><span class="step__n">02</span><div><h3>Connect Google</h3><p>One OAuth flow wires Calendar, Drive and Gmail in. Revoke it any time from your dashboard.</p></div></li>
+        <li class="step reveal"><span class="step__n">03</span><div><h3>Approve your people</h3><p>Anyone who texts is held until you say yes. Your circle only, exactly.</p></div></li>
+        <li class="step reveal"><span class="step__n">04</span><div><h3>Talk to it</h3><p>"Book Priya Friday 3pm." That's the whole interface. Plain language, your phone.</p></div></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- DEMO — pinned 3D phone with scroll-scrubbed real conversation -->
+  <section class="demo section" id="demo">
+    <div class="container demo__layout">
+      <div class="demo__sticky">
+        <div id="phone-demo" aria-label="iPhone running a live omniWA conversation"></div>
+      </div>
+      <div class="demo__copy">
+        <h2 class="h2">Watch it<br />handle a stranger.</h2>
+        <ol class="beats">
+          <li data-beat="0"><strong>A stranger texts.</strong> Unknown number. The bot holds instantly — nothing leaks.</li>
+          <li data-beat="1"><strong>You approve.</strong> One tap in the dashboard. They're inside your circle.</li>
+          <li data-beat="2"><strong>Real work happens.</strong> Calendar checked, slot booked, invite sent. Seconds.</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA — the near-black band. Green pill reads loudest here. -->
+  <section class="band" id="cta">
+    <div class="container band__inner">
+      <h2 class="h2 h2--inverse">Stop typing to strangers.<br />Start delegating.</h2>
+      <a href="#" class="pill pill--primary pill--lg">Deploy omniWA</a>
+      <p class="band__note">Free while in beta. Runs on your own server today.</p>
+    </div>
+  </section>
+
+  <!-- FOOTER — continues the canvas, no contrast -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <span class="footer__brand">omniWA</span>
+      <span class="footer__note">Your business, on WhatsApp, on autopilot.</span>
+      <span class="footer__meta">&copy; 2026 omniWA</span>
+    </div>
+  </footer>
+
+  <script type="module" src="js/main.js?v=5"></script>
+</body>
+</html>
