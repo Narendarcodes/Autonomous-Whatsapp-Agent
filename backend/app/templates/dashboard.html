@@ -501,7 +501,7 @@
                             <div id="wa-timeout-progress" class="h-full bg-secondary w-full transition-all duration-1000"></div>
                         </div>
                         <p id="wa-qr-expired-hint" class="hidden text-[11px] text-error font-semibold text-center pt-1">
-                            QR expired — tap <strong>Generate New QR</strong> for a fresh code, then scan within 3 minutes.
+                            QR expired — tap <strong>Generate New QR</strong> for a fresh code. Each code lives ~20 seconds, so scan promptly.
                         </p>
                     </div>
 
@@ -1787,8 +1787,17 @@
     }
 
     async function reconnectWhatsapp() {
-        // The gateway's bridge rotates QRs on its own; "Generate New QR" simply
-        // forces an immediate fresh fetch.
+        // Ask the backend to launch the headless pairing wizard in the hermes
+        // container (repairs paths, captures rotating QRs to the shared volume).
+        try {
+            const resp = await fetch('/api/pairing/start', { method: 'POST' });
+            if (!resp.ok) {
+                const body = await resp.json().catch(() => ({}));
+                showToast(body.detail || 'Could not start pairing wizard.', 'error');
+            }
+        } catch (e) {
+            showToast('Pairing request failed: ' + e.message, 'error');
+        }
         startHermesPairingPoller();
     }
 

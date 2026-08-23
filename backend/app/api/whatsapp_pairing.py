@@ -12,6 +12,7 @@ from app.services.bridge_config_service import (
     get_bridge_config,
     set_bridge_config,
 )
+from app.services.pairing_session_service import start_pairing_session
 from app.services.whatsapp_pairing_service import pairing_service
 
 router = APIRouter(dependencies=[Depends(verify_api_admin)])
@@ -40,6 +41,22 @@ async def pairing_qr() -> dict:
     if not qr:
         raise HTTPException(status_code=404, detail="No QR available yet")
     return {"format": "unicode_blocks", "qr": qr, "captured_at": captured_at}
+
+
+@router.post("/start")
+async def start_pairing() -> dict:
+    """Launch a headless `hermes whatsapp` wizard inside the hermes container.
+
+    Repairs the wizard's legacy session symlink, kills any previous wizard,
+    and starts capturing rotating QR codes into pairing_session.out on the
+    shared volume — the /status + /qr pollers pick them up automatically.
+    A watchdog restarts hermes once credentials appear so the gateway adopts
+    the new session without further user action.
+    """
+    result = await start_pairing_session()
+    if not result.get("started") and result.get("reason") == "exec_failed":
+        raise HTTPException(status_code=502, detail="Failed to launch pairing wizard in hermes container")
+    return result
 
 
 @router.get("/bridge")
