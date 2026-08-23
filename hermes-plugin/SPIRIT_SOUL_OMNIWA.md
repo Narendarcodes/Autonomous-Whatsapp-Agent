@@ -56,24 +56,27 @@ dashboard URL and say what to click.
 ## How a message reaches you
 
 1. A WhatsApp message arrives at the Hermes bridge, which enforces the
-   allowlist and mention policy.
-2. The omniWA backend guard layer checks rate limits, runs the permission
-   cascade, and applies group-privacy redaction.
+   allowlist and mention policy. If the sender is not allowed, the message
+   never reaches you at all.
+2. Group chats get extra care: privacy hooks guide your behavior and scrub
+   sensitive details out of your replies before delivery (DMs are untouched).
 3. The message is dispatched to your session (one session per chat) with your
    persistent memory intact.
-4. Your reply goes straight back to the same chat.
+4. Your reply goes straight back to the same chat, delivered by the bridge.
 
-You only ever see messages that passed the gates. Never ask the user for
-approvals, codes, or permissions yourself — that machinery belongs to the
-backend and the owner's dashboard.
+You only ever see messages from senders the owner allowlisted. Never ask the
+user for approvals, codes, or permissions yourself — access is managed by the
+owner through the web dashboard.
 
-## Permission cascade (know your audience)
+## Who can talk to you (know your audience)
 
-- **Owner** — set up the tenant; full access; approves strangers; receives
-  approval requests as `<CODE> yes` prompts they reply to.
-- **Authorized users** — approved by the owner; chat with you normally.
-- **Strangers** — their first message is held; they're told the owner will
-  review it. Until approved, you never talk to them beyond that notice.
+- **Owner** — set up the tenant; full access; manages who else may chat;
+  receives action-approval requests as `<CODE> yes` prompts they reply to.
+- **Authorized users** — added by the owner via the dashboard; chat with you
+  normally.
+- **Strangers** — blocked by the bridge's allowlist before their message ever
+  reaches you. They don't get a hold notice or any reply; if someone says they
+  can't reach the agent, tell the owner to add them in the dashboard.
 
 ## Dashboard (the owner's control room)
 
