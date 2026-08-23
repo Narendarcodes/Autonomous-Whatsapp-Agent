@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>omniWA — Your business, on WhatsApp, on autopilot</title>
+  <meta name="description" content="omniWA turns WhatsApp into your hardest-working employee. An enterprise AI assistant with owner-approved access, Google Workspace built in, and full self-hosting." />
+  <meta property="og:title" content="omniWA — Your business, on WhatsApp, on autopilot" />
+  <meta property="og:description" content="Enterprise WhatsApp AI assistant. Permission-gated. Google Workspace native. Self-hosted." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+
+  <script type="importmap">
+  {
+    "imports": {
+      "gsap": "https://esm.sh/gsap@3.12.5",
+      "gsap/ScrollTrigger": "https://esm.sh/gsap@3.12.5/ScrollTrigger",
+      "lenis": "https://esm.sh/lenis@1.1.14",
+      "three": "https://esm.sh/three@0.169.0"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- ======================= NAV ======================= -->
+  <header class="nav" id="nav">
+    <div class="nav__inner container">
+      <a href="#top" class="nav__brand" aria-label="omniWA home">
+        <img src="assets/logo.svg" alt="" class="nav__logo" />
+        <span class="nav__wordmark">omni<span>WA</span></span>
+      </a>
+      <nav class="nav__links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#chat">Live demo</a>
+      </nav>
+      <a href="#cta" class="btn btn--primary btn--sm nav__cta">Get started</a>
+    </div>
+  </header>
+
+  <!-- ======================= HERO ======================= -->
+  <section class="hero" id="top">
+    <canvas id="shader-canvas" aria-hidden="true"></canvas>
+    <div class="hero__vignette" aria-hidden="true"></div>
+
+    <div class="container hero__content">
+      <p class="hero__eyebrow reveal-fade">
+        <span class="pulse-dot" aria-hidden="true"></span>
+        Enterprise WhatsApp AI · Self-hosted
+      </p>
+      <h1 class="hero__title split-chars">
+        Your business,<br />on WhatsApp,<br /><em>on autopilot.</em>
+      </h1>
+      <p class="hero__sub reveal-fade">
+        omniWA is an AI assistant that lives in your WhatsApp — managing calendars,
+        digging through Drive, and answering customers. No stranger gets through
+        without your approval.
+      </p>
+      <div class="hero__actions reveal-fade">
+        <a href="#cta" class="btn btn--primary">Get started free</a>
+        <a href="#how" class="btn btn--ghost">See how it works
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3.5 8.5L8 13l4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+    </div>
+
+    <div class="hero__scrollcue reveal-fade" aria-hidden="true">
+      <span>Scroll</span>
+      <span class="scrollcue-line"></span>
+    </div>
+  </section>
+
+  <!-- ======================= MARQUEE ======================= -->
+  <section class="marquee" aria-label="Capabilities">
+    <div class="marquee__track" id="marquee-track">
+      <!-- duplicated by JS for seamless loop -->
+      <div class="marquee__group">
+        <span>Calendar management</span><i>✦</i>
+        <span>Google Drive search</span><i>✦</i>
+        <span>Permission gating</span><i>✦</i>
+        <span>Group mentions</span><i>✦</i>
+        <span>Persistent memory</span><i>✦</i>
+        <span>Gmail &amp; Sheets</span><i>✦</i>
+        <span>Self-hosted</span><i>✦</i>
+        <span>Multi-tenant</span><i>✦</i>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= FEATURES ======================= -->
+  <section class="section features" id="features">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow reveal-fade">01 — Features</p>
+        <h2 class="section-title split-lines">Built like an employee.<br />Gated like a vault.</h2>
+        <p class="section-sub reveal-fade">
+          Every powerful capability sits behind a permission wall you control.
+        </p>
+      </div>
+
+      <div class="features__grid">
+        <article class="card reveal-card">
+          <div class="card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" stroke="currentColor" stroke-width="1.5"/><path d="M9 12l2 2 4-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Stranger-proof by default</h3>
+          <p>Unknown numbers are held at the door. You approve every user from your dashboard before the AI says a single word to them.</p>
+        </article>
+
+        <article class="card reveal-card">
+          <div class="card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M7 18a4 4 0 010-8 5.5 5.5 0 0110.7-1.4A4.2 4.2 0 0117 18H7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Google Workspace native</h3>
+          <p>Calendar, Drive, Docs, Sheets and Gmail — connected once via OAuth, then just ask in chat. "What's on my plate Friday?"</p>
+        </article>
+
+        <article class="card reveal-card">
+          <div class="card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.5"/><circle cx="16.5" cy="9.5" r="2.4" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 19c.6-3 2.8-4.5 5.5-4.5s4.9 1.5 5.5 4.5M15 14.7c2.3.1 4.2 1.4 4.8 3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <h3>One bot, many people</h3>
+          <p>Your whole team texts the same number. Each person gets their own context, own permissions, own Google connection.</p>
+        </article>
+
+        <article class="card reveal-card">
+          <div class="card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M21 12a9 9 0 11-2.6-6.3M21 4v5h-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Remembers everything</h3>
+          <p>Persistent memory across sessions. Preferences, projects, past decisions — it picks up where you left off, weeks later.</p>
+        </article>
+
+        <article class="card reveal-card">
+          <div class="card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M21 11.5c0 4.1-4 7.5-9 7.5-1 0-2-.1-2.9-.4L4 20l1.2-3.5C3.8 15.2 3 13.4 3 11.5 3 7.4 7 4 12 4s9 3.4 9 7.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </div>
+          <h3>Plays nice in groups</h3>
+          <p>In group chats it stays silent unless @mentioned. Privacy-first: no eavesdropping on conversations it isn't part of.</p>
+        </article>
+
+        <article class="card reveal-card">
+          <div class="card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 21h8M12 17v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <h3>Your server, your data</h3>
+          <p>Runs entirely on infrastructure you own — a single VPS is enough. Conversations never pass through someone else's cloud.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= HOW IT WORKS ======================= -->
+  <section class="section how" id="how">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow reveal-fade">02 — How it works</p>
+        <h2 class="section-title split-lines">Four minutes to a<br />full-time employee.</h2>
+      </div>
+
+      <ol class="timeline" id="timeline">
+        <li class="timeline__item reveal-step">
+          <div class="timeline__marker"><span>1</span></div>
+          <div class="timeline__body">
+            <h3>Scan the QR</h3>
+            <p>Link your WhatsApp account right from the dashboard. No SIM swap, no new number — it rides on yours.</p>
+          </div>
+        </li>
+        <li class="timeline__item reveal-step">
+          <div class="timeline__marker"><span>2</span></div>
+          <div class="timeline__body">
+            <h3>Connect Google</h3>
+            <p>One OAuth flow wires up Calendar, Drive, Gmail and Sheets. Revocable any time.</p>
+          </div>
+        </li>
+        <li class="timeline__item reveal-step">
+          <div class="timeline__marker"><span>3</span></div>
+          <div class="timeline__body">
+            <h3>Approve your people</h3>
+            <p>Anyone who texts gets held until you grant access. Your circle only, exactly.</p>
+          </div>
+        </li>
+        <li class="timeline__item reveal-step">
+          <div class="timeline__marker"><span>4</span></div>
+          <div class="timeline__body">
+            <h3>Just talk to it</h3>
+            <p>Schedule meetings, find files, set reminders, answer customers — in plain language, from your phone.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ======================= CHAT SHOWCASE (pinned) ======================= -->
+  <section class="chatshow" id="chat">
+    <div class="container chatshow__layout">
+      <div class="chatshow__copy">
+        <p class="eyebrow reveal-fade">03 — Live demo</p>
+        <h2 class="section-title split-lines">This is what<br />handing off<br />feels like.</h2>
+        <ul class="chatshow__beats">
+          <li data-beat="0"><strong>A stranger shows up.</strong> Unknown number texts the bot. Held instantly — no response leaks.</li>
+          <li data-beat="1"><strong>You approve.</strong> One tap in the dashboard and they're in your circle.</li>
+          <li data-beat="2"><strong>Real work happens.</strong> Calendar checked, meeting booked, confirmation sent — seconds, not minutes.</li>
+        </ul>
+      </div>
+
+      <div class="phone" aria-label="Simulated WhatsApp conversation">
+        <div class="phone__notch" aria-hidden="true"></div>
+        <div class="phone__header">
+          <div class="phone__avatar" aria-hidden="true">A</div>
+          <div>
+            <div class="phone__name">Ananya Rao</div>
+            <div class="phone__status" id="phone-status">online</div>
+          </div>
+        </div>
+        <div class="phone__screen" id="phone-screen">
+          <div class="msg msg--in" data-msg="0">Hi! Are you open for a consult call this Friday?</div>
+          <div class="msg msg--sys" data-msg="1">🔒 Unknown sender held for review</div>
+          <div class="msg msg--sys msg--ok" data-msg="2">✓ Access granted by owner</div>
+          <div class="msg msg--out" data-msg="3">Hey Ananya! Let me check… 📅</div>
+          <div class="msg msg--typing" data-msg="t"><span></span><span></span><span></span></div>
+          <div class="msg msg--out" data-msg="4">Friday's open after 2pm. Booked you for 3:00 PM IST ✅ — invite sent!</div>
+          <div class="msg msg--in" data-msg="5">Perfect, see you then! 🙌</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= STATS ======================= -->
+  <section class="stats" aria-label="By the numbers">
+    <div class="container stats__row">
+      <div class="stat">
+        <div class="stat__num" data-count="100" data-suffix="%">0%</div>
+        <div class="stat__label">data stays on your infra</div>
+      </div>
+      <div class="stat">
+        <div class="stat__num" data-count="4" data-suffix=" min">0 min</div>
+        <div class="stat__label">from scan to first reply</div>
+      </div>
+      <div class="stat">
+        <div class="stat__num" data-count="0" data-suffix="">0</div>
+        <div class="stat__label">messages read from strangers</div>
+      </div>
+      <div class="stat">
+        <div class="stat__num" data-count="24" data-suffix="/7">0/7</div>
+        <div class="stat__label">always on shift</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= CTA FINALE ======================= -->
+  <section class="cta" id="cta">
+    <canvas id="cta-shader-canvas" aria-hidden="true"></canvas>
+    <div class="cta__glow" aria-hidden="true"></div>
+    <div class="container cta__content">
+      <h2 class="cta__title split-chars">Stop typing to strangers.<br /><em>Start delegating.</em></h2>
+      <p class="cta__sub reveal-fade">Spin up omniWA on your own server today. Free while in beta.</p>
+      <a href="#" class="btn btn--primary btn--lg reveal-fade">Deploy omniWA
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M8.5 3.5L13 8l-4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+    </div>
+  </section>
+
+  <!-- ======================= FOOTER ======================= -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <img src="assets/logo.svg" alt="" class="footer__logo" />
+        <span>omni<span>WA</span></span>
+      </div>
+      <p class="footer__note">Your business, on WhatsApp, on autopilot.</p>
+      <div class="footer__meta">
+        <span>© 2026 omniWA</span>
+        <span>Built with GSAP · Lenis · Three.js</span>
+      </div>
+    </div>
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
