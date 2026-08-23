@@ -142,7 +142,7 @@ export function createPhone3D(canvas, opts = {}) {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(32, 0.5, 0.1, 50);
-  camera.position.set(0, 0, 7.2);
+  camera.position.set(0, 0, 9.2); // full phone (H=4.9) + float margin in frame
 
   // lights — soft studio, matches cream world
   scene.add(new THREE.AmbientLight(0xffffff, 1.15));
@@ -212,7 +212,7 @@ export function createPhone3D(canvas, opts = {}) {
 
   // camera island (back)
   const island = new THREE.Mesh(
-    new THREE.RoundedBox ? new THREE.BoxGeometry(0.7, 0.7, 0.06) : new THREE.BoxGeometry(0.7, 0.7, 0.06),
+    new THREE.BoxGeometry(0.7, 0.7, 0.06),
     new THREE.MeshPhysicalMaterial({ color: 0x111214, roughness: 0.4, metalness: 0.6 })
   );
   island.position.set(-W / 2 + 0.62, H / 2 - 0.62, -D / 2 - 0.02);
