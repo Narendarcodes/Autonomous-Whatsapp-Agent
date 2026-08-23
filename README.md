@@ -1,286 +1,168 @@
-# 🤖 omniWA (Hermes Operating System v2.1)
+# omniWA
 
-> Enterprise-grade, privacy-compliant Autonomous WhatsApp AI Assistant powered by the **Hermes ReAct Engine**, **LiteLLM Multi-Provider Fallback Router**, **FastMCP Google Workspace Integration**, and **Evolution API**.
+> A self-hosted, WhatsApp-native AI assistant built on the Hermes Agent — with a multi-tenant web dashboard, Google Workspace tools, and allowlist-gated access control.
 
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green.svg)](https://fastapi.tiangolo.com/)
-[![Docker](https://img.shields.io/badge/Docker-27+-blue.svg)](https://www.docker.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-7-red.svg)](https://redis.io/)
-[![Hermes](https://img.shields.io/badge/Hermes-Agent-orange.svg)](https://github.com/NousResearch/hermes-agent)
-[![LiteLLM](https://img.shields.io/badge/LiteLLM-Router-purple.svg)](https://github.com/BerriAI/litellm)
-[![Evolution API](https://img.shields.io/badge/Evolution-API-2785-teal.svg)](https://github.com/EvolutionAPI/evolution-api)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker_Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![License](https://img.shields.io/github/license/Narendarcodes/Autonomous-Whatsapp-Agent?style=for-the-badge)
 
 ---
 
-## 📋 Overview
+## What is omniWA?
 
-**omniWA** turns WhatsApp into a full-fledged **Conversational Operating System**. Built around Nous Research's **Hermes Agent ReAct Loop**, it operates autonomously, executes tool calls across your entire **Google Workspace** (Calendar, Drive, Docs, Sheets, Gmail), manages permissions for multiple users via a web dashboard, processes voice notes, enforces DPDP privacy compliance, and operates within an 8-container production Docker environment.
+omniWA turns a WhatsApp account into an AI assistant you can talk to like a colleague: it remembers conversations per chat, manages your Google Calendar / Drive / Docs / Sheets / Gmail through natural language, runs scheduled jobs, and stays under your control through a web dashboard.
 
----
+It is **not** a chatbot behind a webhook. WhatsApp transport is owned by a [Hermes Agent](https://github.com/NousResearch/Hermes-Agent) native Baileys bridge running inside the same container as the agent brain. A FastAPI service acts purely as the **control plane**: dashboard auth, pairing, connection-mode switching, Google OAuth, permissions, and health — never in the message path.
 
-## ✨ Key Features
+### Highlights
 
-### 🤖 Intelligent Brain & ReAct Orchestration (Hermes Agent)
-- **Autonomous Function Calling**: Executes complex multi-step tasks across registered MCP tools.
-- **Persistent User Memory**: Session tracking mapped per user phone number across restarts.
-- **Multi-Model Fallback Chain**: High-availability routing powered by **LiteLLM**:
-  `GitHub Models (GPT-4o-mini) → Gemini 2.5 → Groq (Llama 3) → OpenRouter → NVIDIA NIM`.
-- **Background Cron Execution**: Native scheduling for daily summaries, briefings, and reminders.
-
-### 🔐 Permission & Access Control (ACL System)
-- **Role-Based Access**:
-  - 👑 **Owner (`is_owner=true`)**: Full admin rights, manages permissions, links Google OAuth, configures quiet hours.
-  - 👥 **Authorized Users (`has_permission=true`)**: Can chat in DMs and trigger group mentions.
-  - ⏳ **Pending Users (`has_permission=false`)**: Messages dropped silently at webhook layer with audit logging.
-- **Web UI Admin Dashboard (`/dashboard`)**:
-  - Live session authentication (`naru_session` cookie backed by Redis).
-  - One-click contact whitelist / block toggling.
-  - 1+ character autocomplete search with 300ms client debouncing & caching.
-  - Quiet hours configuration & dynamic status alerts.
-  - Real-time host machine hardware metrics (CPU, RAM, Disk).
-
-### 🌐 Google Workspace Integration (FastMCP Bridge)
-- 📅 **Google Calendar**: Create, search, update, delete events, check schedule conflicts, find free time slots.
-- 📁 **Google Drive**: List, search, upload, and inspect workspace files.
-- 📄 **Google Docs**: Read document contents, append text, generate new docs.
-- 📊 **Google Sheets**: Query spreadsheets, insert rows, manage structured tables.
-- ✉️ **Gmail**: Search unread messages, compose, send, and draft emails.
-- 🌐 **Universal REST HTTP Tool**: Hermes can craft custom REST payloads to interact with external APIs.
-
-### 📱 Advanced WhatsApp Messaging & DPDP Compliance
-- **Evolution API (Baileys Wrapper)**: Webhook-driven WhatsApp integration with HMAC-SHA256 signature verification.
-- **Idempotency & Rate Limiting**: Redis hash idempotency (24h TTL) + sliding window rate limiter (20 req/min).
-- **Per-Chat Sequential Queue**: Asynchronous per-chat queues buffer incoming spikes without drops.
-- **Quoted Reply Context**: Extracted directly from WhatsApp reply bubbles (`contextInfo.quotedMessage`) and fed into LLM prompts.
-- **DPDP Compliance**: Group messages strictly filtered unless `@agent` is explicitly tagged; DMs routed seamlessly.
-- **Voice Message Processing**: Base64 audio decoding + instant transcription via Groq / Whisper.
+- **Two connection modes** — pair the agent to your own number (*self chat*) or a dedicated *bot number*, and switch live from the dashboard (~1 min restart, pairing preserved)
+- **Allowlist access control** — permit individual numbers, JIDs and group JIDs; DM/group policies (`allowlist` / `open` / `disabled`) and a group @mention requirement are editable in the UI
+- **Group Privacy Mode** — Hermes plugin hooks inject a privacy directive into group turns and scrub emails, phone numbers and long numeric tokens out of group replies before delivery
+- **Per-chat persistent memory** — one Hermes session per chat target, surviving restarts
+- **Google Workspace tools** — Calendar, Drive, Docs, Sheets, Gmail via PKCE OAuth; refresh tokens encrypted per tenant in PostgreSQL
+- **Multi-tenant dashboard** — email + password accounts (argon2id), Redis-backed sessions with instant revocation
+- **Native scheduling** — proactive jobs run on Hermes cron, not a bolted-on scheduler
+- **Production posture** — 5-service Docker Compose stack, health checks end-to-end (app / postgres / redis / bridge / hermes), ~150-test pytest suite
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
- WhatsApp User → Evolution API (2785) 
-                    │
-              Webhook Receiver (8000)
-                    │
-          [Signature Check + Idempotency Filter]
-                    │
-          [Sliding-Window Rate Limiting (Redis)]
-                    │
-          [Per-Chat Sequential Queue (asyncio)]
-                    │
-          [Voice Transcription + DPDP Compliance]
-                    │
-          [ACL + Quiet Hours Evaluation]
-                    │
-          [Google Setup Flow & Command Parser]
-                    │
-          [WhatsApp Quoted Reply Context Parser]
-                    │
-          [Sequential Dispatch to Hermes Brain]
-                    │
-    Hermes Agent (8642) + MCP Server (9000)
-                    │
-       [Tools: Calendar, Drive, Docs, Sheets, Gmail, HTTP]
-                    │
-          LiteLLM Router (4000)
-                    │
-     [Fallback Chain: GitHub → Gemini → Groq → OpenRouter → NIM]
+WhatsApp ⇄ Baileys bridge (inside hermes container, :8642)
+              │   allowlist · DM/group policy · @mention gate
+              ▼
+        Hermes gateway ──── one session per chat target
+              │
+        Hermes Agent (ReAct loop, memory, cron)
+        ├── tools: Google Calendar · Drive · Docs · Sheets · Gmail
+        └── reply delivered by the bridge itself
+
+FastAPI backend (:8000) ── control plane, off the message path
+  ├── dashboard UI + argon2 login + Redis sessions
+  ├── WhatsApp pairing (QR) & disconnect
+  ├── bridge configuration (mode/policies → shared volume + restart)
+  ├── Google OAuth connect (per-tenant encrypted tokens)
+  ├── permissions/trust management · preferences · API keys · health
+  └── owner notifications via bridge POST /send
 ```
 
-### 🐳 Container Infrastructure (`docker-compose.yml`)
+### Container stack
 
-| Service | Port | Description |
+| Service | Port | Role |
 | :--- | :--- | :--- |
-| **backend** | `8000` | FastAPI app, webhook handler, ACL router, admin dashboard UI & OAuth endpoints. |
-| **hermes** | `8642` | Nous Research Hermes ReAct agent engine with persistent state memory. |
-| **mcp-server** | `9000` | FastMCP server exposing Google Workspace APIs, HTTP tools, and WhatsApp reply dispatcher. |
-| **litellm** | `4000` | Multi-LLM provider router with automatic failover chain. |
-| **openwa** | `2785` | Evolution API (Baileys protocol engine) maintaining WhatsApp web socket session. |
-| **postgres** | `5432` | PostgreSQL 16 database storing users, ACL records, OAuth tokens, and audit logs. |
-| **redis** | `6379` | Redis 7 caching layer for session storage, idempotency, rate limiting, and QR status. |
-| **tunnel** | N/A | Cloudflare Tunnel serving `https://api.narendar.tech` to public webhooks securely. |
+| **hermes** | 8642 | Nous Research Hermes Agent: gateway, OpenAI-compatible API, native Baileys bridge |
+| **backend** | 8000 | FastAPI control plane: dashboard, pairing, OAuth, permissions, health |
+| **postgres** | 5432 | Users, tenants, ACLs, encrypted Google tokens, audit logs |
+| **redis** | 6379 | Dashboard sessions, caches |
+| **tunnel** | — | Optional Cloudflare tunnel profile for a public URL |
+
+The backend reads/writes the shared `hermes_data` volume (pairing session, runtime bridge config, soul/plugins) and can restart the hermes container over the Docker socket — that's how mode/policy changes apply without touching a terminal.
 
 ---
 
-## 📁 Project Structure
-
-```
-Autonomous-Whatsapp-Agent/
-├── backend/
-│   ├── app/
-│   │   ├── api/                  # FastAPI Endpoints
-│   │   │   ├── webhooks.py       # WhatsApp webhook orchestrator & queue workers
-│   │   │   ├── setup.py          # Dashboard setup, system stats & onboarding
-│   │   │   ├── permissions.py    # Contact ACL management & sync
-│   │   │   ├── oauth.py          # Google OAuth authentication flow
-│   │   │   ├── health.py         # System liveness & readiness probes
-│   │   │   └── logs.py           # Real-time WebSocket log streamer
-│   │   ├── core/                 # Config, database, security & logger
-│   │   ├── db/                   # SQLAlchemy async session & Redis client
-│   │   ├── mcp_server/           # FastMCP tool definitions (Google Workspace, HTTP, WhatsApp)
-│   │   ├── models/               # Database models (User, ACL, OAuth, AuditLog)
-│   │   ├── schemas/              # Pydantic validation schemas
-│   │   ├── services/             # Core business logic (WhatsApp, Agent, OAuth, Permissions)
-│   │   └── templates/            # Glassmorphic Admin Dashboard & QR UI
-│   ├── tests/                    # Automated Pytest suite
-│   ├── Dockerfile                # Python 3.11 Backend image
-│   └── requirements.txt          # Python dependencies
-├── docker/
-│   └── docker-compose.yml        # 8-service Docker orchestration
-├── docs/                         # Extended documentation & architecture diagrams
-├── scripts/                      # Testing & utility scripts
-├── AGENTS.md                     # Agent skill instructions & customization
-├── CONTEXT.md                    # Live architectural state & system parameters
-├── DATABASE_SCHEMA.md            # Detailed PostgreSQL schema documentation
-├── EVENT_DRIVEN_ARCHITECTURE.md  # Webhook queue & event specifications
-└── README.md                     # Project documentation
-```
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
-- **Docker & Docker Compose** (v27+)
-- **WhatsApp Account** (for initial QR pairing)
-- **Google Cloud Project** (OAuth Client ID & Secret for Workspace tools)
-- **GitHub PAT or LLM Provider API Keys** (GitHub Models, Gemini, Groq, OpenRouter)
 
-### 1. Environment Setup
+- Docker + Docker Compose
+- A WhatsApp account to pair (QR scan)
+- Google Cloud OAuth client (only if you want Workspace tools)
 
-Copy `.env.example` to `backend/.env` and populate your credentials:
+### 1. Configure
 
 ```bash
 cp backend/.env.example backend/.env
+# fill in at least:
+#   ADMIN_PASSWORD, SESSION_SECRET_KEY, OWNER_WA_PHONE,
+#   TOKEN_ENCRYPTION_KEY, GOOGLE_CLIENT_ID / _SECRET
 ```
 
-Key environment variables in `backend/.env`:
+For a public URL via Cloudflare Tunnel, put `TUNNEL_TOKEN=...` in `docker/.env`.
 
-```env
-# Server & Security
-ENVIRONMENT=production
-ADMIN_PASSWORD=your_secure_admin_password
-OWNER_WA_PHONE=919876543210
-
-# Database & Redis
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_db_password
-POSTGRES_DB=whatsapp_agent
-REDIS_HOST=redis
-REDIS_PORT=6379
-
-# Evolution API (WhatsApp)
-EVOLUTION_API_URL=http://openwa:2785
-EVOLUTION_API_KEY=your_evolution_api_key
-EVOLUTION_INSTANCE=AgentInstance
-
-# Google Workspace OAuth
-GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GOOGLE_REDIRECT_URI=https://api.narendar.tech/oauth/callback
-
-# LLM Providers (LiteLLM Router)
-GITHUB_TOKEN=ghp_your_github_token
-GEMINI_API_KEY=your_gemini_api_key
-GROQ_API_KEY=your_groq_api_key
-```
-
-### 2. Start the Stack
-
-Launch all 8 services using Docker Compose:
+### 2. Launch
 
 ```bash
 cd docker
-docker-compose up -d
+docker compose up -d            # core: postgres, redis, hermes, backend
+docker compose --profile public up -d   # add the tunnel when ready
 ```
 
-Check the status of running containers:
+### 3. Create the owner account
 
 ```bash
-docker-compose ps
+cd backend
+python -m scripts.seed_owner --email you@example.com --password 'a-strong-password'
 ```
 
-### 3. QR Code Pairing & Onboarding
+(Inside the deployment instead: `docker exec -it <backend-container> python -m scripts.seed_owner ...`.)
 
-1. Open the Setup Page in your browser:
-   `https://api.narendar.tech/setup` (or `http://localhost:8000/setup`)
-2. Log in using your `ADMIN_PASSWORD`.
-3. Scan the generated WhatsApp QR Code with your phone to link Evolution API.
-4. Click **Connect Google Workspace** to complete the OAuth 2.0 flow.
+### 4. Pair and go
 
-### 4. Admin Dashboard Access
+1. Open `http://localhost:8000/login` (or your domain) and sign in.
+2. **WhatsApp tab** → scan the QR with the phone you're pairing.
+3. **Identity tab** → pick *Self Chat* or *Bot Number*; set DM/group policies and the allowlist; hit **Apply & Restart Agent**.
+4. **Permissions tab** → grant contacts; **Connect Google** → finish OAuth.
 
-Manage user permissions, monitor system load, and configure settings at:
-`https://api.narendar.tech/dashboard` (or `http://localhost:8000/dashboard`)
-
-- **Whitelist Contacts**: Grant permissions to specific contacts.
-- **Quiet Hours**: Define hours during which the agent refrains from automated messaging.
-- **System Metrics**: Inspect real-time CPU, Memory, and Disk usage.
+Message the paired number and you're talking to your agent.
 
 ---
 
-## 🧪 Testing & Verification
+## Configuration
 
-Run the full integration test suite against the live Docker stack:
+Key variables in `backend/.env` (see `.env.example` for the full annotated list):
+
+| Variable | Purpose |
+| :--- | :--- |
+| `ADMIN_PASSWORD` | Legacy bootstrap admin password |
+| `SESSION_SECRET_KEY` | Dashboard session signing key — change it |
+| `OWNER_WA_PHONE` | Owner identity used by ACL/OAuth flows |
+| `TOKEN_ENCRYPTION_KEY` | Fernet key encrypting Google tokens at rest |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Workspace OAuth client |
+| `POSTGRES_*`, `REDIS_*` | Data stores |
+| `HERMES_BASE_URL`, `HERMES_API_KEY` | Backend ↔ Hermes API |
+| `WHATSAPP_MODE`, `WHATSAPP_DM_POLICY`, `WHATSAPP_GROUP_POLICY`, `WHATSAPP_REQUIRE_MENTION`, `WHATSAPP_ALLOWED_USERS` | Bootstrap bridge config (runtime changes live on the shared volume via the dashboard) |
+
+Runtime WhatsApp configuration lives on the `hermes_data` volume (`bridge_env` + policy block in `config.yaml`) and is managed from the dashboard — the env vars above only seed the first boot.
+
+---
+
+## Testing
 
 ```bash
-docker compose -f docker/docker-compose.yml exec -T backend python -m pytest -x --tb=short
+cd backend
+./.venv/Scripts/python.exe -m pytest -q     # Windows venv layout
 ```
 
-### Verification Highlights:
-- ✅ Authentication & session management (`naru_session` cookie verification).
-- ✅ HMAC-SHA256 webhook signature check (`X-Evolution-Signature`).
-- ✅ Redis sliding window rate limiting & idempotency hash verification.
-- ✅ Audio voice message transcription pipeline.
-- ✅ Quoted reply message parsing.
-- ✅ Contact lookup debouncing and ACL authorization checks.
+Covers endpoints/auth, pairing + bridge config round-trips, permission cascade logic, group-privacy wiring, phone utilities and more (~150 tests against real Postgres + Redis test instances).
 
 ---
 
-## 🔒 Security & Privacy
+## Security & Privacy
 
-- **DPDP Privacy Compliance**: Strictly filters non-mentioned messages in group chats.
-- **HMAC Signature Verification**: Validates all inbound Evolution API webhooks using `X-Evolution-Signature`.
-- **Encrypted Token Storage**: AES-256 encrypted refresh tokens stored in PostgreSQL.
-- **Session Authentication**: Secure `HttpOnly` session cookies backed by Redis for web endpoints.
+- **Access is deny-by-default**: with `dm_policy=allowlist` only explicitly permitted numbers/JIDs reach the agent.
+- **Group Privacy Mode**: two Hermes-side layers — a system-prompt directive for group turns plus deterministic redaction of outbound group replies; DMs untouched. Group streaming and tool-progress bubbles are disabled so partial output never leaks.
+- **Encrypted secrets**: Google refresh tokens are Fernet-encrypted per tenant row; dashboard sessions are HttpOnly cookies backed by instantly-revocable Redis keys.
+- **No message transit through the backend**: the control plane never sees chat content; it cannot read your conversations.
 
----
+### Known limitations
 
-## 📄 Documentation Index
-
-- [CONTEXT.md](CONTEXT.md) — Architectural overview & active system status.
-- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) — Full database schema & migrations guide.
-- [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md) — Message processing pipeline details.
-- [PRODUCTION_READY_FINAL.md](PRODUCTION_READY_FINAL.md) — Option B Hermes migration overview.
-- [LIMITATIONS_AND_IMPROVEMENTS.md](LIMITATIONS_AND_IMPROVEMENTS.md) — System scaling roadmap.
+Tracked in [CONTEXT.md](CONTEXT.md) ("Known Gaps & Future Work"). Notably: inbound per-sender rate limiting is not currently enforced (safe under a tight allowlist; revisit before opening DMs).
 
 ---
 
-## 📝 License
+## Documentation
 
-Distributed under the MIT License. See `LICENSE` for more information.
+- [CONTEXT.md](CONTEXT.md) — current architecture, key files, runtime configuration, known gaps
+- [docs/adr/](docs/adr/) — architecture decision records (see `0007` for the v3 transport redesign)
+- [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) — PostgreSQL schema
+- [AGENTS.md](AGENTS.md) — repo conventions for coding agents
+- [hermes-plugin/](hermes-plugin/) — the agent's soul prompt + group-privacy plugin source
 
 ---
 
-## Post-migration quickstart (v3.0)
+## License
 
-```bash
-# 1. Core stack (postgres, redis, hermes, backend)
-cd docker && docker compose up -d
-
-# 2. Public URL (optional): put TUNNEL_TOKEN=*** in docker/.env first
-docker compose --profile public up -d
-
-# 3. Seed your dashboard owner (multi-tenant login)
-cd ../backend
-python -m scripts.seed_owner --email you@yourbiz.com --password 'a-strong-password'
-#    (inside the container: docker cp + python -m scripts.seed_owner ...)
-
-# 4. Log in at http://localhost:8000/login → Connect Google → approve contacts
-```
-
-Stack: **5 services** (postgres, redis, hermes, backend, tunnel). WhatsApp transport is Hermes' native Baileys bridge; omniWA handles auth, the permission cascade (stranger asks → owner approves via `<CODE> yes`), and encrypted per-tenant Google tokens. See `docs/adr/0007-hermes-native-transport-and-tools.md` and `.impeccable/critique/BACKLOG-layout-debt.md`.
+[MIT](LICENSE)
