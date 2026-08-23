@@ -92,21 +92,13 @@ async def _parse_evolution_event(payload: dict[str, Any]) -> dict[str, Any] | No
         .lstrip("+")
     )
     
-    # Try to get bot_phone from cache or query it from Evolution API based on instance
+    # Legacy bot_phone resolution (Evolution era, dormant in v3 — Hermes owns
+    # transport now). Cache-only; falls through to sender JID when absent.
     instance = payload.get("instance")
     if instance == "agent-session":
-        bot_phone = await cache_get("whatsapp:agent_bot_phone")
-        if not bot_phone:
-            from app.services.agent_instance_service import agent_instance_service
-            bot_phone = await agent_instance_service.get_agent_phone()
-            if bot_phone:
-                await cache_set("whatsapp:agent_bot_phone", bot_phone, ttl_seconds=86400)
+        bot_phone = await cache_get("whatsapp:agent_bot_phone") or ""
     else:
-        bot_phone = await cache_get("whatsapp:bot_phone")
-        if not bot_phone:
-            bot_phone = await whatsapp_service.get_bot_phone()
-            if bot_phone:
-                await cache_set("whatsapp:bot_phone", bot_phone, ttl_seconds=86400)
+        bot_phone = await cache_get("whatsapp:bot_phone") or ""
     
     if not bot_phone:
         bot_phone = (
@@ -223,12 +215,8 @@ async def evolution_qr_webhook(request: Request) -> dict[str, str]:
 
 
 async def _send_reply(parsed: dict[str, Any], to: str, text: str) -> None:
-    """Send a reply to the sender/chat using the correct WhatsApp instance session."""
-    if parsed.get("instance") == "agent-session":
-        from app.services.agent_instance_service import agent_instance_service
-        await agent_instance_service.send_via_agent(to, text)
-    else:
-        await whatsapp_service.send_text(to, text)
+    """Send a reply to the sender/chat (legacy Evolution path; dormant in v3)."""
+    await whatsapp_service.send_text(to, text)
 
 
 async def _chat_worker(chat_id: str, queue: asyncio.Queue):
@@ -501,11 +489,7 @@ async def evolution_webhook(request: Request) -> dict[str, str]:
         logger.warning(f"User {parsed['sender_phone']} rate-limited")
         if parsed["sender_phone"] == owner_clean:
             alert_msg = "⚠️ *System Alert*: You are sending messages too quickly. Please wait a moment before sending more messages."
-            if parsed.get("instance") == "agent-session":
-                from app.services.agent_instance_service import agent_instance_service
-                await agent_instance_service.send_via_agent(parsed["sender_phone"], alert_msg)
-            else:
-                await whatsapp_service.send_text(parsed["sender_phone"], alert_msg)
+            await whatsapp_service.send_text(parsed["sender_phone"], alert_msg)
         return {"status": "rate_limited", "message_id": parsed["message_id"]}
 
     # Queue message processing sequentially
@@ -519,54 +503,10 @@ async def evolution_webhook(request: Request) -> dict[str, str]:
         logger.warning(f"Queue size for chat {chat_id} exceeded. Dropping message {parsed['message_id']}")
         if parsed["sender_phone"] == owner_clean:
             alert_msg = "⚠️ *System Alert*: You are sending too many messages. Some messages may be skipped to prevent overload."
-            if parsed.get("instance") == "agent-session":
-                from app.services.agent_instance_service import agent_instance_service
-                await agent_instance_service.send_via_agent(parsed["sender_phone"], alert_msg)
-            else:
-                await whatsapp_service.send_text(parsed["sender_phone"], alert_msg)
+            await whatsapp_service.send_text(parsed["sender_phone"], alert_msg)
         return {"status": "dropped_queue_full", "message_id": parsed["message_id"]}
 
     await q.put(parsed)
     return {"status": "queued", "message_id": parsed["message_id"]}
 
-
-async def _store_agent_qr_from_payload(payload: dict[str, Any]) -> bool:
-    """Extract and cache agent QR code data."""
-    def _extract_qr(value: Any) -> str:
-        if isinstance(value, str):
-            return value if ("base64" in value or len(value) > 100) else ""
-        if isinstance(value, dict):
-            for key in ("base64", "qrcode", "qr", "code"):
-                found = _extract_qr(value.get(key))
-                if found:
-                    return found
-            for child in value.values():
-                found = _extract_qr(child)
-                if found:
-                    return found
-        return ""
-    
-    qr_data = _extract_qr(payload.get("data") or payload)
-    if not qr_data:
-        return False
-    from app.services.agent_instance_service import AGENT_QR_CACHE_KEY
-    await cache_set(AGENT_QR_CACHE_KEY, qr_data, ttl_seconds=180)
-    logger.info("Agent QR code cached (180s TTL)")
-    return True
-
-
-@router.post("/webhook/agent-qr")
-async def agent_qr_webhook(request: Request) -> dict[str, str]:
-    """Dedicated QR code update webhook for agent."""
-    try:
-        payload = await request.json()
-    except Exception:
-        return {"status": "bad_json"}
-    return {"status": "ok" if await _store_agent_qr_from_payload(payload) else "no_qr"}
-
-
-@router.post("/webhook/agent")
-async def agent_webhook(request: Request) -> dict[str, str]:
-    """Main webhook for the agent WhatsApp instance."""
-    return await evolution_webhook(request)
 

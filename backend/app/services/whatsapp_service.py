@@ -195,41 +195,15 @@ class WhatsAppService:
         return f"{cleaned}@s.whatsapp.net" if cleaned else ""
 
     async def send_text(self, to: str, message: str, force_primary: bool = False) -> bool:
-        """Send a plain-text message to a phone or group JID."""
+        """Send a plain-text message to a phone or group JID.
+
+        v3: single Evolution instance; dual_number agent routing removed with
+        the Evolution API itself (ADR-0007 — Hermes bridge delivers replies).
+        """
         number = self.to_chat_id(to)
         if not number:
             logger.warning("send_text called with empty target")
             return False
-
-        # Route through agent instance if dual_number mode is active and agent is connected
-        use_agent = False
-        if not force_primary:
-            to_clean = normalize_phone_number(to)
-            owner_phone_clean = normalize_phone_number(settings.OWNER_WA_PHONE)
-            if to_clean and owner_phone_clean and to_clean == owner_phone_clean:
-                try:
-                    from app.services.preferences_service import preferences_service
-                    from app.models.models import User
-                    from app.db.database import AsyncSessionLocal
-                    from sqlalchemy import select
-
-                    async with AsyncSessionLocal() as db:
-                        result = await db.execute(select(User).where(User.is_owner == True))
-                        owner = result.scalar_one_or_none()
-                        if owner:
-                            bot_mode = await preferences_service.get(owner.id, "bot_mode")
-                            bot_phone = await preferences_service.get(owner.id, "bot_phone")
-                            if bot_mode == "dual_number" and bot_phone:
-                                from app.services.agent_instance_service import agent_instance_service
-                                status = await agent_instance_service.get_agent_instance_status()
-                                if status.get("state") == "open":
-                                    use_agent = True
-                except Exception as e:
-                    logger.error("Failed to check agent routing state in send_text: %s", e)
-
-        if use_agent:
-            from app.services.agent_instance_service import agent_instance_service
-            return await agent_instance_service.send_via_agent(to, message)
 
         import hashlib
         msg_hash = hashlib.md5(f"{number}:{message.strip()}".encode()).hexdigest()

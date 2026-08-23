@@ -167,24 +167,6 @@ async def lifespan(app: FastAPI):
                 await db.commit()
                 logger.info("Owner records synchronized successfully.")
 
-                # If bot is in dual_number mode, configure agent webhook
-                from app.services.preferences_service import preferences_service
-                owner_id = current_owner.id if current_owner else None
-                if not owner_id:
-                    result = await db.execute(select(User).where(User.is_owner == True))
-                    owner_user = result.scalar_one_or_none()
-                    owner_id = owner_user.id if owner_user else None
-
-                if owner_id:
-                    bot_mode = await preferences_service.get(owner_id, "bot_mode")
-                    if bot_mode == "dual_number":
-                        from app.services.agent_instance_service import agent_instance_service
-                        logger.info("Lifespan startup: Bot is in dual_number mode, ensuring agent instance status/webhook configuration")
-                        try:
-                            await agent_instance_service.configure_agent_webhook()
-                        except Exception as agent_webhook_err:
-                            logger.error("Failed to configure agent webhook on startup: %s", agent_webhook_err)
-
                 # Sync Google OAuth credentials to Hermes on startup
                 from app.services.oauth_service import load_user_credentials, sync_credentials_to_hermes
                 result = await db.execute(select(User).where(User.is_owner == True))

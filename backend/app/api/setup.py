@@ -1,6 +1,7 @@
 """Evolution API setup endpoints — instance creation, QR display."""
 import os
 import asyncio
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Response, Request, Depends, Form, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, field_validator
@@ -473,9 +474,27 @@ async def change_password(payload: ChangePasswordPayload, request: Request) -> d
 
 @router.post("/setup/disconnect")
 async def disconnect_whatsapp(dependencies=Depends(verify_api_admin)) -> dict:
-    ok = await whatsapp_service.delete_instance()
-    if not ok:
-        raise HTTPException(status_code=502, detail="Failed to delete instance in openwa adapter")
+    """v3: unlink the Hermes Baileys session (Evolution API dropped).
+
+    Deletes the bridge session directory on the shared hermes_data volume and
+    restarts the hermes container; it comes back unpaired and the dashboard
+    shows a fresh QR for re-linking.
+    """
+    import shutil
+
+    from app.services.whatsapp_pairing_service import whatsapp_paths
+
+    paths = whatsapp_paths()
+    creds_path = Path(paths["creds"])
+    if creds_path.exists():
+        shutil.rmtree(str(creds_path.parent), ignore_errors=True)
+        logger.info("Deleted WhatsApp bridge session at %s", creds_path.parent)
+
+    from app.services.bridge_config_service import restart_hermes
+
+    restarted = await restart_hermes()
+    if not creds_path.exists() and not restarted:
+        raise HTTPException(status_code=502, detail="Failed to disconnect WhatsApp session")
     return {"status": "disconnected"}
 
 
@@ -530,272 +549,6 @@ async def get_system_status(dependencies=Depends(verify_api_admin)) -> dict:
 
 # ==================== AGENT PHONE SETUP ENDPOINTS ====================
 
-
-@router.get("/api/agent/status")
-async def get_agent_status(dependencies=Depends(verify_api_admin)) -> dict:
-    """Return live connection state of the agent (secondary) Evolution API instance.
-    
-    Returns:
-      - state: "open" | "connecting" | "close" | "unknown" | "not_configured"
-      - bot_phone: configured agent phone number (empty if not configured)
-      - message: human-readable description
-    """
-    from app.services.agent_instance_service import agent_instance_service
-
-    # Check if any agent phone is configured first
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.is_owner == True))
-        owner = result.scalar_one_or_none()
-        if not owner:
-            return {"state": "not_configured", "bot_phone": "", "message": "Owner not connected yet."}
-        bot_phone = await preferences_service.get(owner.id, "bot_phone") or ""
-        bot_mode = await preferences_service.get(owner.id, "bot_mode") or settings.BOT_RELATIONSHIP_MODE
-
-    if not bot_phone or bot_mode != "dual_number":
-        return {"state": "not_configured", "bot_phone": "", "message": "No agent phone configured."}
-
-    # Query the live connection state from Evolution API
-    try:
-        status = await agent_instance_service.get_agent_instance_status()
-        state = status.get("state", "unknown")
-        msg_map = {
-            "open": f"Agent +{bot_phone} is connected and active.",
-            "connecting": f"Agent +{bot_phone} is connecting. Please wait...",
-            "close": f"Agent +{bot_phone} is disconnected. Please reconnect.",
-            "unknown": f"Agent status unknown. The session may have been removed.",
-        }
-        return {
-            "state": state,
-            "bot_phone": bot_phone,
-            "message": msg_map.get(state, f"Agent state: {state}"),
-        }
-    except Exception as exc:
-        logger.error("get_agent_status error: %s", exc)
-        return {
-            "state": "unknown",
-            "bot_phone": bot_phone,
-            "message": "Unable to reach Evolution API to check agent status.",
-        }
-
-
-
-
-class AgentPhoneRequestPayload(BaseModel):
-    phone: str
-
-
-@router.post("/api/agent-phone/request")
-async def request_agent_phone(payload: AgentPhoneRequestPayload, dependencies=Depends(verify_api_admin)) -> dict:
-    """Validate agent phone, create agent Evolution API instance, return QR code."""
-    from app.services.agent_instance_service import agent_instance_service
-    
-    # --- Phone Validation ---
-    validation = validate_phone_number(payload.phone)
-    if not validation["is_valid"]:
-        raise HTTPException(status_code=400, detail=validation.get("error", "Invalid phone number."))
-    
-    phone_digits = validation["digits"]
-    country_code = validation.get("country_code", "")
-    
-    # --- Check for existing configured bot_phone ---
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.is_owner == True))
-        owner = result.scalar_one_or_none()
-        if not owner:
-            raise HTTPException(status_code=404, detail="Owner not found. Connect WhatsApp first.")
-        owner_id = owner.id
-    
-    existing_bot_phone = await preferences_service.get(owner_id, "bot_phone")
-    existing_clean = normalize_phone_number(existing_bot_phone) if existing_bot_phone else ""
-    
-    # --- Store pending phone ---
-    await cache_set("whatsapp:agent_pending_phone", phone_digits, ttl_seconds=600)
-    
-    # --- Create or reconnect agent instance ---
-    # Disconnect/delete any existing agent session instance first so we start fresh
-    await agent_instance_service.delete_agent_instance()
-    await asyncio.sleep(2.0)  # Give Evolution API time to cleanly release the session
-    
-    qr = await agent_instance_service.create_agent_instance()
-    if not qr:
-        raise HTTPException(status_code=502, detail="Failed to create agent WhatsApp instance. Check Evolution API.")
-    
-    # --- Forward QR instructions to owner's WhatsApp and target agent's WhatsApp ---
-    try:
-        owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-        if owner_phone:
-            qr_msg_owner = (
-                f"🤖 *Naru Agent Setup*\n\n"
-                f"Please link the Agent Chat interface (+{phone_digits}) under the Owner account (+{owner_phone}) by scanning the QR code in the Naru dashboard.\n\n"
-                f"Guidelines:\n"
-                f"1️⃣ Open WhatsApp on the *second phone* (+{phone_digits})\n"
-                f"2️⃣ Tap ⋮ *Menu* → *Linked Devices* → *Link a Device*\n"
-                f"3️⃣ Scan the QR code shown in your Naru dashboard\n\n"
-                f"⏳ The QR expires in ~5 minutes. Check your dashboard for the QR."
-            )
-            await whatsapp_service.send_text(owner_phone, qr_msg_owner, force_primary=True)
-    except Exception as e:
-        logger.warning("Failed to send QR notification to owner: %s", e)
-
-    try:
-        owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-        qr_msg_agent = (
-            f"🤖 *Naru Agent Setup*\n\n"
-            f"Please link this Agent Chat interface (+{phone_digits}) under the Owner account (+{owner_phone}) by scanning the QR code in the Naru dashboard.\n\n"
-            f"Guidelines:\n"
-            f"1️⃣ Open WhatsApp on this phone (+{phone_digits})\n"
-            f"2️⃣ Tap ⋮ *Menu* → *Linked Devices* → *Link a Device*\n"
-            f"3️⃣ Scan the QR code shown in your Naru dashboard\n\n"
-            f"⏳ The QR expires in ~5 minutes. Check your dashboard for the QR."
-        )
-        await whatsapp_service.send_text(phone_digits, qr_msg_agent, force_primary=True)
-    except Exception as e:
-        logger.warning("Failed to send QR notification to target agent phone: %s", e)
-    
-    return {
-        "status": "qr_ready",
-        "qr": qr,
-        "phone": phone_digits,
-        "country_code": country_code,
-        "existing_bot_phone": existing_clean or None,
-        "message": f"QR code ready. Open WhatsApp on +{phone_digits} → Linked Devices → Link a Device → scan QR."
-    }
-
-
-@router.get("/api/agent-phone/qr-status")
-async def agent_phone_qr_status(dependencies=Depends(verify_api_admin)) -> dict:
-    """Poll agent instance connection status. On connect: save bot_phone, whitelist, notify owner."""
-    from app.services.agent_instance_service import agent_instance_service
-    
-    status = await agent_instance_service.get_agent_instance_status()
-    state = status.get("state", "unknown")
-    
-    if state == "open":
-        # Instance connected — fetch the linked phone
-        linked_phone = await agent_instance_service.get_agent_phone()
-        pending_phone = await cache_get("whatsapp:agent_pending_phone")
-        phone_to_use = linked_phone or pending_phone or ""
-        
-        if phone_to_use:
-            phone_clean = normalize_phone_number(phone_to_use) or phone_to_use
-            
-            # If pending_phone is not set in Redis, it means we already completed the setup flow
-            # for this link request (or it wasn't initiated).
-            if not pending_phone:
-                return {"state": "open", "phone": phone_clean, "message": f"Agent number +{phone_clean} is now active!"}
-            
-            # Immediately clear the pending cache key to lock/prevent concurrent or duplicate poll calls from executing this block
-            await cache_set("whatsapp:agent_pending_phone", "", ttl_seconds=1)
-            
-            async with AsyncSessionLocal() as db:
-                owner_res = await db.execute(select(User).where(User.is_owner == True))
-                owner = owner_res.scalar_one_or_none()
-                if owner:
-                    # Save bot_phone preference
-                    await preferences_service.set(owner.id, "bot_phone", phone_clean)
-                    await preferences_service.set(owner.id, "bot_mode", "dual_number")
-                    
-                    # Whitelist the agent number in DB
-                    agent_res = await db.execute(select(User).where(User.wa_phone == phone_clean))
-                    agent_user = agent_res.scalar_one_or_none()
-                    if not agent_user:
-                        agent_user = User(
-                            wa_phone=phone_clean,
-                            is_owner=False,
-                            has_permission=True,
-                            display_name="Agent Chat"
-                        )
-                        db.add(agent_user)
-                    else:
-                        agent_user.has_permission = True
-                        agent_user.display_name = "Agent Chat"
-                    await db.commit()
-                    
-                    # Send connection notifications to owner (X) and start agent chat (Y)
-                    try:
-                        owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-                        if owner_phone:
-                            # 1. Send confirmation message in self-chat on Account X
-                            await whatsapp_service.send_text(
-                                owner_phone,
-                                f"the account +{phone_clean} is connected as a chat interface",
-                                force_primary=True
-                            )
-                            
-                            # 2. Send greeting message from Account Y (agent) to Account X (owner) to start the agent chat
-                            greeting_msg = (
-                                f"🤖 *Naru AI Agent Connected*\n\n"
-                                f"Hello! I am your AI assistant. I have successfully connected as your agent chat interface (+{phone_clean}) and am ready to receive your commands and handle your tasks!"
-                            )
-                            await agent_instance_service.send_via_agent(owner_phone, greeting_msg)
-                    except Exception as e:
-                        logger.warning("Failed to send agent connection notifications: %s", e)
-                    
-                    logger.info("Agent phone %s linked and whitelisted", phone_clean)
-                    
-                    return {"state": "open", "phone": phone_clean, "message": f"Agent number +{phone_clean} is now active!"}
-        
-        return {"state": "open", "phone": "", "message": "Connected but phone not yet resolved."}
-    
-    # Not connected yet — return state + fresh QR
-    return {
-        "state": state,
-        "qr": status.get("qr", ""),
-        "message": "Waiting for QR scan..."
-    }
-
-
-@router.post("/api/agent-phone/cancel")
-async def cancel_agent_phone(dependencies=Depends(verify_api_admin)) -> dict:
-    """Cancel the pending agent phone link request. 
-    Resets the bot_mode to self_chat and clears bot_phone ONLY if no existing bot phone was configured
-    or if we are not in the middle of a replacement request.
-    """
-    from app.services.agent_instance_service import agent_instance_service
-    
-    # Drop any pending/newly created agent session instance
-    await agent_instance_service.delete_agent_instance()
-    
-    # Get pending phone from cache
-    pending_phone = await cache_get("whatsapp:agent_pending_phone")
-    pending_phone_clean = normalize_phone_number(pending_phone) if pending_phone else ""
-    
-    message = "Agent setup canceled."
-    # Reset preferences to self_chat ONLY if we didn't have a previously successfully saved bot_phone.
-    # If we had a previously saved bot_phone, we keep the preferences as they were!
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(User).where(User.is_owner == True))
-        owner = result.scalar_one_or_none()
-        if owner:
-            old_bot_phone = await preferences_service.get(owner.id, "bot_phone")
-            old_bot_phone_clean = normalize_phone_number(old_bot_phone) if old_bot_phone else ""
-            
-            # If there was no previous bot phone configured, or if we are NOT replacing (i.e. pending_phone is empty or matches old_bot_phone)
-            is_replacing = old_bot_phone_clean and pending_phone_clean and pending_phone_clean != old_bot_phone_clean
-            
-            if not is_replacing:
-                await preferences_service.set(owner.id, "bot_phone", "")
-                await preferences_service.set(owner.id, "bot_mode", "self_chat")
-                
-                # Find and disable the Agent Chat permission status
-                result_agent = await db.execute(
-                    select(User).where(User.display_name == "Agent Chat")
-                )
-                agent_users = result_agent.scalars().all()
-                for au in agent_users:
-                    au.has_permission = False
-                await db.commit()
-                message = "Agent setup canceled. Switched to Self Chat mode."
-            else:
-                message = f"Agent setup canceled. Preserved previous agent number +{old_bot_phone_clean}."
-            
-    # Clear caches
-    await cache_set("whatsapp:agent_pending_phone", "", ttl_seconds=1)
-    
-    return {"status": "success", "message": message}
-
-
-# ==================== DYNAMIC API KEY MANAGEMENT ENDPOINTS ====================
 
 class ApiKeyCreatePayload(BaseModel):
     name: str
