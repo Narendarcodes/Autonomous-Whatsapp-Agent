@@ -162,6 +162,28 @@ async def oauth_start(phone: str = Query(..., description="WhatsApp phone of the
     return {"authorization_url": auth_url}
 
 
+@router.get("/connect-google")
+async def connect_google() -> RedirectResponse:
+    """Public alias advertised by the agent soul (SOUL.md tells users to visit
+    https://api.narendar.tech/connect-google). Resolves the owner phone and
+    redirects straight to Google's consent screen.
+
+    Single-owner semantics: token lands on OWNER_WA_PHONE / default tenant,
+    mirroring the legacy fallback in /oauth/authorize.
+    """
+    import json
+
+    state = secrets.token_urlsafe(24)
+    auth_url, code_verifier = build_authorization_url(state)
+    state_data = {
+        "phone": settings.OWNER_WA_PHONE.lstrip("+"),
+        "code_verifier": code_verifier,
+        "tenant_id": 1,
+    }
+    await cache_set(f"oauth_state:{state}", json.dumps(state_data), ttl_seconds=600)
+    return RedirectResponse(url=auth_url)
+
+
 @router.get("/oauth/callback")
 async def oauth_callback(code: str, state: str) -> Any:
     """Callback from Google OAuth. Exchanges code for tokens and stores them."""

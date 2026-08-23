@@ -492,3 +492,52 @@ def test_dashboard_tab_deep_linking():
     assert ("location.hash" in load_code or "URLSearchParams" in load_code), (
         "page load must restore the tab from location.hash"
     )
+
+
+class TestConnectGoogleAlias:
+    """SOUL.md advertises https://api.narendar.tech/connect-google — it must work."""
+
+    @pytest.fixture
+    def client(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        import importlib as _imp
+        app = FastAPI()
+        app.include_router(_imp.import_module("app.api.oauth").router)
+        return TestClient(app)
+
+    def test_redirects_to_google_consent(self, client, monkeypatch):
+        import app.api.oauth as api
+
+        async def fake_cache_set(key, value, ttl_seconds=None):
+            assert key.startswith("oauth_state:")
+
+        monkeypatch.setattr(api, "build_authorization_url",
+                            lambda state: ("https://accounts.google.com/o/oauth2/auth?fake=1", "verifier_abc"))
+        monkeypatch.setattr(api, "cache_set", fake_cache_set)
+
+        resp = client.get("/connect-google", follow_redirects=False)
+        assert resp.status_code in (301, 302, 303, 307)
+        assert resp.headers["location"].startswith("https://accounts.google.com/")
+
+    def test_caches_state_with_verifier_and_phone(self, client, monkeypatch):
+        import app.api.oauth as api
+
+        captured = {}
+
+        async def fake_cache_set(key, value, ttl_seconds=None):
+            captured["key"] = key
+            captured["value"] = value
+
+        monkeypatch.setattr(api, "build_authorization_url",
+                            lambda state: ("https://accounts.google.com/x", "verifier_xyz"))
+        monkeypatch.setattr(api, "cache_set", fake_cache_set)
+
+        client.get("/connect-google", follow_redirects=False)
+
+        assert captured["key"].startswith("oauth_state:")
+        import json
+        data = json.loads(captured["value"])
+        assert data["code_verifier"] == "verifier_xyz"
+        assert data.get("phone")  # owner phone resolved
