@@ -74,20 +74,6 @@ async def test_access_control_permissions(db_session):
         assert new_user.display_name == f"User {new_phone[-4:]}"
 
 @pytest.mark.asyncio
-async def test_webhook_signature_verification():
-    """Test signature rejection for unauthorized payloads."""
-    payload = {"event": "messages.upsert", "data": {}}
-    headers = {"X-Evolution-Signature": "invalid_hash_value"}
-    
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        resp = await ac.post("/webhook/openwa", json=payload, headers=headers)
-        # Should return 401 Unauthorized if settings.OPENWA_WEBHOOK_SECRET is set
-        if settings.OPENWA_WEBHOOK_SECRET:
-            assert resp.status_code == 401
-        else:
-            assert resp.status_code in (200, 400) # In dev mode (no secret) signature is bypassed
-
-@pytest.mark.asyncio
 async def test_rate_limiting():
     """Test Redis-backed message request rate limiter."""
     from app.db.redis_client import check_rate_limit
@@ -133,39 +119,6 @@ async def test_login_success():
         assert resp2.headers["location"] == "/dashboard"
         assert "naru_session" in resp2.cookies
 
-@pytest.mark.asyncio
-async def test_reply_context_extraction(db_session):
-    """Verify webhook parser correctly extracts quoted messages."""
-    from app.api.webhooks import _parse_evolution_event
-    payload = {
-        "event": "messages.upsert",
-        "instanceId": "naru-instance",
-        "data": {
-            "key": {
-                "remoteJid": "919999999999@s.whatsapp.net",
-                "fromMe": False,
-                "id": "MSG12345"
-            },
-            "message": {
-                "extendedTextMessage": {
-                    "text": "Hello, this is my response!",
-                    "contextInfo": {
-                        "quotedMessage": {
-                            "conversation": "What is your name?"
-                        },
-                        "participant": "919999999999@s.whatsapp.net"
-                    }
-                }
-            },
-            "messageTimestamp": 1672531199,
-            "pushName": "Test User"
-        }
-    }
-    parsed = await _parse_evolution_event(payload)
-    assert parsed is not None
-    assert parsed["message_text"] == "Hello, this is my response!"
-    assert parsed["quoted_text"] == "What is your name?"
-    assert parsed["sender_phone"] == "919999999999"
 
 @pytest.mark.asyncio
 async def test_quiet_hours_validation():

@@ -65,17 +65,10 @@ async def reset_global_connections():
         pass
     yield
     try:
-        from app.services.whatsapp_service import whatsapp_service
-
-        client = whatsapp_service._client
-        if client is not None:
-            # A previous test may have leaked a mock into the singleton via a
-            # global httpx patch; never let its fake methods escape teardown.
-            try:
-                await client.aclose()
-            except Exception:
-                pass
-            whatsapp_service._client = None
+        from app.services import bridge_client
+        # A previous test may have leaked a mock into the singleton via a
+        # global httpx patch; never let its fake methods escape teardown.
+        await bridge_client.close()
     except Exception:
         pass
     try:

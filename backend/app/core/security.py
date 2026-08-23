@@ -1,7 +1,4 @@
-"""HMAC verification and token encryption."""
-import hashlib
-import hmac
-
+"""Password hashing and token encryption."""
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHashError
 from cryptography.fernet import Fernet, InvalidToken
@@ -31,23 +28,6 @@ def needs_rehash(hashed: str) -> bool:
         return _ph.check_needs_rehash(hashed)
     except Exception:
         return False
-
-
-def verify_openwa_signature(body: bytes, signature: str | None) -> bool:
-    """Verify OpenWA webhook HMAC-SHA256 signature.
-
-    Returns True if the signature is valid, or if no secret is configured
-    (development mode).
-    """
-    secret = settings.OPENWA_WEBHOOK_SECRET
-    if not secret:
-        return True  # dev mode: skip verification
-    if not signature:
-        return False
-
-    received = signature.replace("sha256=", "").strip()
-    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, received)
 
 
 def _get_fernet() -> Fernet:

@@ -36,11 +36,6 @@ class Settings(BaseSettings):
     REDIS_DB: int = 0
 
     # OpenWA
-    OPENWA_BASE_URL: str = "http://openwa:2785"
-    OPENWA_API_KEY: str = ""
-    OPENWA_SESSION_ID: str = "my-session"
-    OPENWA_WEBHOOK_SECRET: str = ""
-    OPENWA_WEBHOOK_URL: str = "http://backend:8000/webhook/openwa"
     OWNER_WA_PHONE: str = ""
     BOT_RELATIONSHIP_MODE: str = "self_chat"
 

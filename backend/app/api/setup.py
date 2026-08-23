@@ -1,4 +1,4 @@
-"""Evolution API setup endpoints — instance creation, QR display."""
+"""Setup & admin endpoints — dashboard pages, preferences, disconnect, API keys."""
 import os
 import asyncio
 from pathlib import Path
@@ -14,7 +14,7 @@ from app.core.auth import SESSION_COOKIE
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import cache_get, cache_set
 from app.core.logging import get_logger
-from app.services.whatsapp_service import normalize_phone_number, validate_phone_number
+from app.services.phone_utils import normalize_phone_number, validate_phone_number
 from app.models.models import User, AuditLog, ApiKey, CustomerGoogleToken
 from app.core.security import decrypt_token
 from app.services.preferences_service import preferences_service

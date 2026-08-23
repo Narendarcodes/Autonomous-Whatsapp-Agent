@@ -5,11 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.core.security import verify_openwa_signature
 from app.db.database import AsyncSessionLocal
 from app.models.models import User
 from app.api.setup import verify_api_admin
-from app.services.whatsapp_service import normalize_phone_number  # phone utils (kept)
+from app.services.phone_utils import normalize_phone_number
 from app.services import bridge_client
 
 router = APIRouter(dependencies=[Depends(verify_api_admin)])

@@ -7,11 +7,11 @@ from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.api import health, oauth, permissions, setup, webhooks, whatsapp_pairing
+from app.api import health, oauth, permissions, setup, whatsapp_pairing
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.redis_client import close_redis, ensure_consumer_group, get_redis
-from app.services.whatsapp_service import normalize_phone_number
+from app.services.phone_utils import normalize_phone_number
 
 setup_logging()
 logger = get_logger(__name__)
@@ -176,7 +176,6 @@ async def get_favicon():
     return Response(status_code=404)
 
 app.include_router(health.router, tags=["health"])
-app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(setup.router, tags=["setup"])
 app.include_router(oauth.router, tags=["oauth"])
 app.include_router(permissions.router, tags=["permissions"])
