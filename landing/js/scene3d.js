@@ -95,9 +95,10 @@ varying vec3 vViewDir;
 void main(){
   float fresnel = pow(1.0 - max(dot(vNormal, vViewDir), 0.0), 2.2);
   float lambert = max(dot(vNormal, normalize(vec3(0.6, 0.8, 0.75))), 0.0);
-  vec3 base = mix(uDeep * 0.35, uDeep, lambert);
-  vec3 col = base + uAccent * fresnel * 1.35;
-  col += uAccent * 0.06 * sin(uTime * 1.4); // breathing pulse
+  vec3 base = vec3(0.027, 0.078, 0.102);            // #0B141A blue-black tint
+  vec3 col = base + uDeep * lambert * 0.5;
+  col += uAccent * fresnel * 0.85;                  // dialled-back rim
+  col += uAccent * 0.03 * sin(uTime * 1.4);         // subtle breathing
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -116,7 +117,7 @@ function makeRenderer(canvas) {
 }
 
 const ACCENT = new THREE.Color("#25d366");
-const DEEP = new THREE.Color("#12805c");
+const DEEP = new THREE.Color("#0d6e4f"); // teal-mid family, less neon than before
 
 /**
  * Hero "signal core": noise-displaced blob + particle swarm.
@@ -169,9 +170,9 @@ export function createSignalCore(canvas, opts = {}) {
   pGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   const pMat = new THREE.PointsMaterial({
     color: ACCENT,
-    size: 0.022,
+    size: 0.02,
     transparent: true,
-    opacity: 0.65,
+    opacity: 0.4, // softer, less neon swarm
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     sizeAttenuation: true,
@@ -297,7 +298,7 @@ export function createCtaScene(canvas) {
   const mat = new THREE.LineBasicMaterial({
     color: ACCENT,
     transparent: true,
-    opacity: 0.16,
+    opacity: 0.1, // dialled back from 0.16
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
@@ -306,9 +307,9 @@ export function createCtaScene(canvas) {
 
   // faint inner solid for depth occlusion
   const innerMat = new THREE.MeshBasicMaterial({
-    color: 0x050807,
+    color: 0x0b141a, // WhatsApp blue-black
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.6,
   });
   const inner = new THREE.Mesh(geo, innerMat);
   knot.add(inner);

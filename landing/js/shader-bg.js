@@ -59,13 +59,13 @@ void main() {
   float band = f * smoothstep(0.0, 0.9, uv.y * 0.85 + 0.15);
   float glow = pow(band, 2.6) * uIntensity;
 
-  vec3 base = vec3(0.016, 0.031, 0.024);           // near-black green tint
-  vec3 accent = vec3(0.145, 0.827, 0.4);            // #25D366-ish
-  vec3 deep = vec3(0.05, 0.35, 0.18);               // mid tone
+  vec3 base = vec3(0.027, 0.078, 0.102);            // #0B141A blue-black
+  vec3 accent = vec3(0.145, 0.827, 0.4);            // #25D366
+  vec3 deep = vec3(0.055, 0.42, 0.32);              // teal-mid family
 
   vec3 col = base;
-  col += deep * glow * 0.85;
-  col += accent * pow(glow, 1.6) * 0.55;
+  col += deep * glow * 0.55;                        // was 0.85 — less neon
+  col += accent * pow(glow, 1.8) * 0.35;
 
   // vignette to keep text zones dark
   float vig = smoothstep(1.25, 0.35, distance(uv, vec2(0.5, 0.42)));
