@@ -624,6 +624,45 @@
                             </button>
                         </div>
 
+                        <!-- Access policies editor -->
+                        <div class="pt-2 border-t border-outline-variant/50 space-y-4">
+                            <p class="font-label-md text-label-md text-on-surface font-bold flex items-center gap-2">
+                                <span class="material-symbols-outlined text-[18px] text-primary">shield</span>
+                                Who can reach the agent
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <label class="block">
+                                    <span class="text-[12px] font-semibold text-on-surface-variant">Direct messages</span>
+                                    <select id="bridge-dm-policy" onchange="bridgePolicyChanged()"
+                                        class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant text-sm text-on-surface outline-none focus:border-primary">
+                                        <option value="allowlist">Allowlist only</option>
+                                        <option value="open">Open (anyone)</option>
+                                        <option value="disabled">Off (ignore DMs)</option>
+                                    </select>
+                                </label>
+                                <label class="block">
+                                    <span class="text-[12px] font-semibold text-on-surface-variant">Groups</span>
+                                    <select id="bridge-group-policy" onchange="bridgePolicyChanged()"
+                                        class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant text-sm text-on-surface outline-none focus:border-primary">
+                                        <option value="allowlist">Allowlist only</option>
+                                        <option value="open">Open (any group)</option>
+                                        <option value="disabled">Off (ignore groups)</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <label class="flex items-center gap-3 cursor-pointer select-none w-fit">
+                                <input type="checkbox" id="bridge-require-mention" onchange="bridgePolicyChanged()"
+                                    class="w-4 h-4 accent-[var(--md-sys-color-primary,#6750a4)]">
+                                <span class="text-[13px] text-on-surface">Groups require @mention</span>
+                            </label>
+                            <label class="block">
+                                <span class="text-[12px] font-semibold text-on-surface-variant">Allowlist — numbers / JIDs / LIDs, one per line or comma-separated</span>
+                                <textarea id="bridge-allow-from" rows="4" oninput="bridgePolicyChanged()"
+                                    placeholder="916300354385\n200283032441063@lid\n120312345678-987654321@g.us"
+                                    class="mt-1 w-full px-3 py-2 rounded-lg bg-surface-container-low border border-outline-variant text-[13px] font-mono text-on-surface outline-none focus:border-primary resize-y"></textarea>
+                            </label>
+                        </div>
+
                         <!-- Apply bar -->
                         <div class="mt-2 flex flex-wrap items-center gap-3">
                             <button type="button" id="btn-apply-bridge-mode" onclick="applyBridgeMode()" disabled
@@ -2364,6 +2403,33 @@
     // WhatsApp Connection Mode (Hermes bridge config)
     // =========================================================
     let liveBridgeMode = 'self-chat';
+    let liveBridgePolicies = {};
+
+    function _parseAllowlist(raw) {
+        return (raw || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    }
+
+    function _collectPolicies() {
+        const dm = document.getElementById('bridge-dm-policy');
+        const gp = document.getElementById('bridge-group-policy');
+        const rm = document.getElementById('bridge-require-mention');
+        const af = document.getElementById('bridge-allow-from');
+        return {
+            dm_policy: dm ? dm.value : undefined,
+            group_policy: gp ? gp.value : undefined,
+            require_mention: rm ? rm.checked : undefined,
+            allow_from: af ? _parseAllowlist(af.value) : undefined,
+        };
+    }
+
+    function _policySnapshot(p) {
+        return JSON.stringify([p.dm_policy, p.group_policy, p.require_mention, p.allow_from]);
+    }
+
+    function bridgePolicyChanged() {
+        updateBridgeApplyButton();
+    }
+    window.bridgePolicyChanged = bridgePolicyChanged;
 
     async function loadBridgeConfig() {
         const statusEl = document.getElementById('bridge-mode-status');
@@ -2375,10 +2441,25 @@
             selectedBotMode = liveBridgeMode;
             selectBotMode(liveBridgeMode);
 
+            liveBridgePolicies = {
+                dm_policy: data.dm_policy || 'allowlist',
+                group_policy: data.group_policy || 'allowlist',
+                require_mention: !!data.require_mention,
+                allow_from: data.allow_from || [],
+            };
+            const dmEl = document.getElementById('bridge-dm-policy');
+            const gpEl = document.getElementById('bridge-group-policy');
+            const rmEl = document.getElementById('bridge-require-mention');
+            const afEl = document.getElementById('bridge-allow-from');
+            if (dmEl) dmEl.value = liveBridgePolicies.dm_policy;
+            if (gpEl) gpEl.value = liveBridgePolicies.group_policy;
+            if (rmEl) rmEl.checked = liveBridgePolicies.require_mention;
+            if (afEl) afEl.value = liveBridgePolicies.allow_from.join('\n');
+
             const policies = [];
-            policies.push(`DMs: ${data.dm_policy || 'allowlist'}`);
-            policies.push(`Groups: ${data.group_policy || 'allowlist'}${data.require_mention ? ' (@mention)' : ''}`);
-            policies.push(`Allowed senders: ${(data.allow_from || []).length}`);
+            policies.push(`DMs: ${liveBridgePolicies.dm_policy}`);
+            policies.push(`Groups: ${liveBridgePolicies.group_policy}${liveBridgePolicies.require_mention ? ' (@mention)' : ''}`);
+            policies.push(`Allowed senders: ${liveBridgePolicies.allow_from.length}`);
             if (data.restart_supported === false) {
                 policies.push('\u26a0 Docker socket not mounted \u2014 apply needs manual restart');
             }
@@ -2394,7 +2475,8 @@
     function updateBridgeApplyButton() {
         const applyBtn = document.getElementById('btn-apply-bridge-mode');
         if (!applyBtn) return;
-        if (selectedBotMode !== liveBridgeMode) {
+        const policiesDirty = liveBridgePolicies && (_policySnapshot(liveBridgePolicies) !== _policySnapshot(_collectPolicies()));
+        if (selectedBotMode !== liveBridgeMode || policiesDirty) {
             applyBtn.disabled = false;
             applyBtn.className = 'flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-bold text-sm shadow hover:brightness-110 active:scale-95 transition-all select-none outline-none cursor-pointer';
         } else {
@@ -2408,11 +2490,16 @@
         const statusEl = document.getElementById('bridge-mode-status');
         if (!applyBtn || applyBtn.disabled) return;
         const targetMode = selectedBotMode;
+        const targetPolicies = _collectPolicies();
+        const policiesDirty = liveBridgePolicies && (_policySnapshot(liveBridgePolicies) !== _policySnapshot(targetPolicies));
         const modeLabel = targetMode === 'bot' ? 'Bot Number' : 'Self Chat';
+        const restartNote = policiesDirty && targetMode === liveBridgeMode
+            ? 'The agent brain restarts to apply the new access policies (~1 minute). Your WhatsApp pairing is kept.'
+            : 'The agent brain restarts to apply the new connection mode (~1 minute). Your WhatsApp pairing is kept.';
 
         const confirmed = await window.showConfirmModal(
-            `Switch to ${modeLabel}?`,
-            'The agent brain restarts to apply the new connection mode (~1 minute). Your WhatsApp pairing is kept.'
+            `Apply bridge configuration?`,
+            `${targetMode !== liveBridgeMode ? `Switch to ${modeLabel}. ` : ''}${restartNote}`
         );
         if (!confirmed) return;
 
@@ -2424,7 +2511,7 @@
             const resp = await fetch('/api/pairing/bridge', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: targetMode })
+                body: JSON.stringify({ mode: targetMode, ...targetPolicies })
             });
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({}));
@@ -2432,12 +2519,13 @@
             }
             const data = await resp.json();
             liveBridgeMode = targetMode;
+            liveBridgePolicies = targetPolicies;
             if (statusEl) {
                 statusEl.innerText = data.restarted === false
                     ? 'Saved. Restart the hermes container manually to activate.'
                     : 'Applied! Agent reconnecting on WhatsApp\u2026';
             }
-            showToast(data.restarted === false ? 'Saved \u2014 manual restart needed.' : 'Connection mode updated!', 'success');
+            showToast(data.restarted === false ? 'Saved \u2014 manual restart needed.' : 'Bridge configuration updated!', 'success');
         } catch (e) {
             console.error('Bridge mode switch failed:', e);
             if (statusEl) statusEl.innerText = 'Switch failed: ' + e.message;
