@@ -44,6 +44,9 @@ def whatsapp_paths(hermes_data_dir: str | None = None) -> dict:
         "root": root,
         "bridge_log": f"{root}/bridge.log",
         "creds": f"{root}/session/creds.json",
+        # Captured pty output of the CLI pairing wizard (`hermes whatsapp` under
+        # `script`). The wizard prints rotating QRs HERE, not to bridge.log.
+        "pairing_out": f"{root}/pairing_session.out",
     }
 
 
@@ -147,28 +150,44 @@ async def get_pairing_state(
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
     if not paired:
-        age = await asyncio.to_thread(_bridge_log_age_seconds, paths["bridge_log"])
-        if age is not None and age <= _QR_MAX_AGE_SECONDS:
-            qr = await asyncio.to_thread(extract_latest_qr, paths["bridge_log"])
-            state["qr_available"] = bool(qr)
+        qr, _cap = await asyncio.to_thread(_fresh_qr_from_sources, hermes_data_dir)
+        state["qr_available"] = bool(qr)
     return state
+
+
+def _fresh_qr_from_sources(
+    hermes_data_dir: str | None = None, max_age: int = _QR_MAX_AGE_SECONDS
+) -> tuple[str, str] | tuple[None, None]:
+    """Newest fresh QR block across all known sources (bridge.log, wizard out).
+
+    A file only qualifies if modified within max_age seconds; among qualifying
+    files the newest mtime wins. Returns (qr_block, captured_iso) or (None, None).
+    """
+    paths = whatsapp_paths(hermes_data_dir)
+    best: tuple[float, str] | None = None  # (mtime, qr)
+    for key in ("bridge_log", "pairing_out"):
+        path = paths[key]
+        age = _bridge_log_age_seconds(path)
+        if age is None or age > max_age:
+            continue
+        qr = extract_latest_qr(path)
+        if not qr:
+            continue
+        mt = os.path.getmtime(path)
+        if best is None or mt > best[0]:
+            best = (mt, qr)
+    if best is None:
+        return None, None
+    return best[1], datetime.fromtimestamp(best[0], tz=timezone.utc).isoformat()
 
 
 def read_latest_qr(hermes_data_dir: str | None = None) -> tuple[str, str] | tuple[None, None]:
     """Return (qr_block_text, captured_at_iso) or (None, None).
 
-    Only offers a QR while bridge.log is actively written; captured_at mirrors
-    the log mtime (the QR's true birth time), never the read time.
+    Only offers a QR while a source file is actively written; captured_at
+    mirrors that file's mtime (the QR's true birth time), never the read time.
     """
-    path = whatsapp_paths(hermes_data_dir)["bridge_log"]
-    age = _bridge_log_age_seconds(path)
-    if age is None or age > _QR_MAX_AGE_SECONDS:
-        return None, None
-    qr = extract_latest_qr(path)
-    if not qr:
-        return None, None
-    captured = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
-    return qr, captured.isoformat()
+    return _fresh_qr_from_sources(hermes_data_dir)
 
 
 class WhatsappPairingService:
