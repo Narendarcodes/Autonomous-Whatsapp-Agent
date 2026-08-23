@@ -156,3 +156,18 @@ one move. Feasibility unknown: need to verify a Hermes platform hook can
 only rewrites prompts/outputs). Alternative rejected for now: a token bucket
 inside `bridge.js` — that file is baked into the image and edits would not
 survive container recreation.
+
+### Root landing page (planned, not built)
+`https://api.narendar.tech/` currently serves no index (bare 404). Plan:
+a marketing/onboarding landing page as the default `/` view with
+login/dashboard links. To be built on its own branch (`feat/landing-page`);
+deliberately out of v3 QA scope (owner decision 2026-08-23).
+
+### opencode-zen provider degradation (external)
+Since ~2026-08-23 all zen models return `401 Model <empty> is not supported`
+through Hermes despite model IDs existing in zen's live catalog (`GET /models`
+lists them). Direct probes hit Cloudflare 1010 bot-walls. Strongly suggests an
+expired/entitlement-changed API key on zen's side. Mitigation: Hermes'
+fallback chain lands on openrouter, so replies still work (slower — several
+failed attempts first). Fix is external: regenerate `OPENCODE_ZEN_API_KEY`
+in `<hermes_data>/.env` and restart hermes.
