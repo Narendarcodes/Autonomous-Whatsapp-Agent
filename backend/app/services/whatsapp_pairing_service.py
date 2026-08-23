@@ -10,7 +10,9 @@ How it works:
   gateway runtime status (/health/detailed on the Hermes API server).
 """
 import asyncio
+import os
 import re
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -22,6 +24,17 @@ logger = get_logger(__name__)
 
 _QR_HEADER_RE = re.compile(r"Scan this QR code")
 _BLOCK_CHARS = set("█▄▀ ")
+# The bridge rotates QRs ~every 20s; a log untouched longer than this holds only
+# expired art. Serving it caused the 2026-08-23 stale-QR incident.
+_QR_MAX_AGE_SECONDS = 90
+
+
+def _bridge_log_age_seconds(bridge_log_path: str) -> float | None:
+    """Seconds since bridge.log was last written, or None if unreadable."""
+    try:
+        return max(0.0, time.time() - os.path.getmtime(bridge_log_path))
+    except OSError:
+        return None
 
 
 def whatsapp_paths(hermes_data_dir: str | None = None) -> dict:
@@ -134,17 +147,28 @@ async def get_pairing_state(
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
     if not paired:
-        qr = await asyncio.to_thread(extract_latest_qr, paths["bridge_log"])
-        state["qr_available"] = bool(qr)
+        age = await asyncio.to_thread(_bridge_log_age_seconds, paths["bridge_log"])
+        if age is not None and age <= _QR_MAX_AGE_SECONDS:
+            qr = await asyncio.to_thread(extract_latest_qr, paths["bridge_log"])
+            state["qr_available"] = bool(qr)
     return state
 
 
 def read_latest_qr(hermes_data_dir: str | None = None) -> tuple[str, str] | tuple[None, None]:
-    """Return (qr_block_text, captured_at_iso) or (None, None)."""
-    qr = extract_latest_qr(whatsapp_paths(hermes_data_dir)["bridge_log"])
+    """Return (qr_block_text, captured_at_iso) or (None, None).
+
+    Only offers a QR while bridge.log is actively written; captured_at mirrors
+    the log mtime (the QR's true birth time), never the read time.
+    """
+    path = whatsapp_paths(hermes_data_dir)["bridge_log"]
+    age = _bridge_log_age_seconds(path)
+    if age is None or age > _QR_MAX_AGE_SECONDS:
+        return None, None
+    qr = extract_latest_qr(path)
     if not qr:
         return None, None
-    return qr, datetime.now(timezone.utc).isoformat()
+    captured = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
+    return qr, captured.isoformat()
 
 
 class WhatsappPairingService:
