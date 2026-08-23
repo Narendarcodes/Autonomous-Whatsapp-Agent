@@ -1,16 +1,41 @@
 // main.js — orchestrates all landing page motion
 import { gsap, ScrollTrigger, reducedMotion, initSmoothScroll, splitChars, prepareReveals } from "./motion.js";
-import { createShaderBackground } from "./shader-bg.js";
+import { createSignalCore, createCtaScene } from "./scene3d.js";
 
 initSmoothScroll();
 prepareReveals();
 
-/* ---------- shader backgrounds ---------- */
-const heroCanvas = document.getElementById("shader-canvas");
-if (heroCanvas) createShaderBackground(heroCanvas, { intensity: 1.0 });
+/* ---------- 3D scenes ---------- */
+const core = { api: null };
+{
+  const heroCanvas = document.getElementById("shader-canvas");
+  if (heroCanvas) {
+    // keep the flat aurora as a base layer behind the 3D object
+    import("./shader-bg.js").then(({ createShaderBackground }) =>
+      createShaderBackground(heroCanvas, { intensity: 0.55 })
+    );
+    const objCanvas = document.createElement("canvas");
+    objCanvas.id = "hero-3d-canvas";
+    heroCanvas.parentElement.insertBefore(objCanvas, heroCanvas.nextSibling);
+    core.api = createSignalCore(objCanvas);
+  }
+}
 
-const ctaCanvas = document.getElementById("cta-shader-canvas");
-if (ctaCanvas) createShaderBackground(ctaCanvas, { intensity: 0.7 });
+// hero scroll → 3D core reacts (spin + shrink away)
+if (core.api && !reducedMotion) {
+  ScrollTrigger.create({
+    trigger: ".hero",
+    start: "top top",
+    end: "bottom top",
+    scrub: true,
+    onUpdate: (self) => {
+      const p = self.progress;
+      core.api.state.scrollRotY = p * 1.6;
+      core.api.state.scrollRotX = p * -0.5;
+      core.api.state.scale = Math.max(0.25, 1 - p * 0.9);
+    },
+  });
+}
 
 /* ---------- nav glass on scroll ---------- */
 const nav = document.getElementById("nav");
@@ -84,12 +109,28 @@ if (!reducedMotion) {
     });
   });
 
-  // card cursor-glow follows mouse
+  // card cursor-glow + true 3D tilt follows mouse
   document.querySelectorAll(".card").forEach((card) => {
+    const parent = card.parentElement;
+    parent.style.perspective = "900px";
+
     card.addEventListener("pointermove", (e) => {
       const r = card.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width;
+      const py = (e.clientY - r.top) / r.height;
       card.style.setProperty("--mx", `${e.clientX - r.left}px`);
       card.style.setProperty("--my", `${e.clientY - r.top}px`);
+      gsap.to(card, {
+        rotationY: (px - 0.5) * 14,
+        rotationX: -(py - 0.5) * 12,
+        y: -6,
+        transformPerspective: 900,
+        duration: 0.4,
+        ease: "power2.out",
+      });
+    });
+    card.addEventListener("pointerleave", () => {
+      gsap.to(card, { rotationY: 0, rotationX: 0, y: 0, duration: 0.7, ease: "elastic.out(1, 0.55)" });
     });
   });
 }
@@ -204,7 +245,11 @@ document.querySelectorAll(".stat__num").forEach((numEl) => {
   });
 });
 
-/* ---------- CTA finale reveal ---------- */
+/* ---------- CTA finale reveal + 3D knot ---------- */
+{
+  const ctaCanvas = document.getElementById("cta-shader-canvas");
+  if (ctaCanvas) createCtaScene(ctaCanvas);
+}
 if (!reducedMotion) {
   const ctaChars = splitChars(document.querySelector(".cta__title"));
   gsap.set(ctaChars, { yPercent: 110 });
