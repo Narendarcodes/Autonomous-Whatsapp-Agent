@@ -1,4 +1,5 @@
 """Health check endpoints."""
+import httpx
 from fastapi import APIRouter
 from sqlalchemy import text
 
