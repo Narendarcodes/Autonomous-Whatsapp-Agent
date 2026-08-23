@@ -1,0 +1,9 @@
+name: omniwa-assist
+version: 1.0.0
+description: >
+  Group assistant gate + contacts ingest. Pushes every group sender identity
+  to the omniWA backend directory, then keyword-gates group chatter:
+  @mentions pass through, capability keywords are rewritten into a
+  suggest-don't-execute mode, everything else is skipped before it can cost
+  an LLM call.
+kind: standalone
