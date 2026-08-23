@@ -19,6 +19,7 @@ from app.db.database import get_db, AsyncSessionLocal
 from app.models.models import ObservedContact
 from app.api.setup import verify_api_admin
 from app.core.auth import get_principal
+from app.services.bridge_config_service import get_bridge_config, set_bridge_config
 
 logger = get_logger(__name__)
 
@@ -93,6 +94,30 @@ async def _upsert_contacts(contacts: list[ContactIn], tenant_id: int | None = No
     return len(contacts)
 
 
+@router.post("/{contact_id}/allowlist", dependencies=[Depends(verify_api_admin)])
+async def allowlist_contact(contact_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Merge this contact into the bridge allow_from (bare + s.whatsapp.net)
+    and restart hermes so the transport gate picks it up."""
+    res = await db.execute(select(ObservedContact).where(ObservedContact.id == contact_id))
+    row = res.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    cfg = await get_bridge_config()
+    allow = list(cfg.get("allow_from") or [])
+    for variant in (row.wa_phone, f"{row.wa_phone}@s.whatsapp.net"):
+        if variant not in allow:
+            allow.append(variant)
+
+    result = await set_bridge_config({"allow_from": allow})
+    return {
+        "contact_id": contact_id,
+        "wa_phone": row.wa_phone,
+        "allow_from": result.get("allow_from", allow),
+        "restarted": bool(result.get("restarted", False)),
+    }
+
+
 @router.post("/ingest")
 async def ingest_contacts(payload: IngestPayload, request: Request) -> dict:
     """Upsert observed WhatsApp identities. Token-guarded; disabled when
@@ -148,6 +173,10 @@ async def search_contacts(
         {
             "id": r.id,
             "wa_phone": r.wa_phone,
+            # legacy-shape aliases consumed by the dashboard suggestions UI
+            "phone": r.wa_phone,
+            "name": r.display_name or r.wa_phone,
+            "is_group": False,
             "display_name": r.display_name,
             "lid": r.lid,
             "source_chats": r.source_chats or [],

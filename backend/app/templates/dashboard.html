@@ -1786,6 +1786,27 @@
         }
     }
 
+    async function allowlistContact(contactId, btn) {
+        if (!contactId) return;
+        const original = btn ? btn.innerText : '';
+        if (btn) { btn.disabled = true; btn.innerText = '...'; }
+        try {
+            const resp = await fetch(`/api/contacts/${contactId}/allowlist`, { method: 'POST' });
+            const body = await resp.json().catch(() => ({}));
+            if (resp.ok) {
+                showToast('Contact allowlisted — agent gate restarting', 'success');
+                if (btn) btn.innerText = '✓ Allowed';
+            } else {
+                if (btn) { btn.disabled = false; btn.innerText = original; }
+                showToast(body.detail || 'Allowlist update failed.', 'error');
+            }
+        } catch (e) {
+            if (btn) { btn.disabled = false; btn.innerText = original; }
+            showToast('Allowlist request failed: ' + e.message, 'error');
+        }
+    }
+    window.allowlistContact = allowlistContact;
+
     async function reconnectWhatsapp() {
         // Ask the backend to launch the headless pairing wizard in the hermes
         // container (repairs paths, captures rotating QRs to the shared volume).
@@ -3594,6 +3615,7 @@
                             <p class="text-xs text-on-surface">${highlightedName}</p>
                             <p class="text-[10px] font-mono text-on-surface-variant">${highlightedPhone}</p>
                         </div>
+                        ${c.id ? `<button onclick="event.stopPropagation(); allowlistContact('${c.id}', this)" title="Add to WhatsApp allowlist (restarts agent gate)" class="ml-2 px-2 py-1 rounded-md border border-emerald-500/40 text-emerald-600 hover:bg-emerald-50 text-[10px] font-bold uppercase tracking-wide transition-colors">Allow</button>` : ''}
                     </div>
                 `;
             }).join('');

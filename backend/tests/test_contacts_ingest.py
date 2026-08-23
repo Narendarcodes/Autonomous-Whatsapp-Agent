@@ -84,6 +84,10 @@ async def test_upsert_updates_existing_not_duplicate(client, token):
         assert len(rows) == 1
         assert rows[0]["display_name"] == "New Name"
         assert rows[0]["lid"] == "999@lid"
+        # legacy-shape aliases consumed by the dashboard suggestions UI
+        assert rows[0]["phone"] == "9195xxxx3333"
+        assert rows[0]["name"] == "New Name"
+        assert "id" in rows[0]
     finally:
         app.dependency_overrides.pop(verify_api_admin, None)
 
