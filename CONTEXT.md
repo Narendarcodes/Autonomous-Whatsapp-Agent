@@ -2,12 +2,15 @@
 
 ## System Status
 
-**Last Updated**: 2026-08-21  
+**Last Updated**: 2026-08-23  
 **Deployment**: Docker Compose (5 services: postgres, redis, hermes, backend, tunnel)  
 **Domain**: https://api.narendar.tech (Cloudflare tunnel, profile-gated; requires TUNNEL_TOKEN in docker/.env)  
-**Queue**: In-memory per-chat async queue with Redis-backed sliding-window rate limiting  
+**WhatsApp transport**: Hermes-native Baileys bridge (in-image, port 8642) — owns pairing, inbound filtering and reply delivery  
 **DB**: PostgreSQL (tenants, dashboard_users, customer_google_tokens, users, events, reminders, audit logs, preferences, ACLs)  
 **Auth**: Multi-tenant — argon2 dashboard login, Redis sessions (instant revoke), per-tenant Google token isolation
+
+**Dropped vs v2.1** (ADR-0007): Evolution API/openwa, LiteLLM, MCP server, whisper, kokoro.  
+**Also removed since**: `/webhook/openwa|/webhook/qr` receivers, `whatsapp_service` Evolution client, `agent_instance_service`, dual_number flows (commit 368fa7d).
 
 ---
 
@@ -15,107 +18,85 @@
 
 ```
 WhatsApp User
-                    ↓
-    Hermes Native Baileys Bridge (8642)
-    [config gate: dm_policy=allowlist + require_mention]
-                    ↓
-    omniWA Thin Inbound Layer (8000)
-    [rate-limit 20/min + per-chat queue + permission cascade]
-    · owner/authorized → run
-    · stranger → hold → owner approves via <CODE> yes
-                    ↓
-    dispatch_to_hermes (X-Hermes-Session-Id = chat target)
-                    ↓
-    Hermes Brain — N tenant profiles, native tools
-    [Calendar, Drive, Docs, Sheets, Gmail, web; provider fallback chain]
-                    ↓
-    Reply delivered by Hermes bridge directly
+     ↓
+Hermes Native Baileys Bridge (:8642, inside hermes container)
+[allowlist + dm/group policy + require_mention gate]
+     ↓
+Hermes Gateway — one session per chat target
+[X-Hermes-Session-Id = chat JID/phone]
+     ↓
+Hermes Brain — N tenant profiles, native tools
+[Calendar, Drive, Docs, Sheets, Gmail, web]
+     ↓
+Reply delivered by the bridge directly to the same chat
+
+omniWA Backend (:8000) — control plane, NOT in the message path:
+  · Dashboard UI + auth (argon2, Redis sessions)
+  · WhatsApp pairing flow (QR display, status, disconnect)
+  · Bridge configuration (mode/policies via /api/pairing/bridge)
+  · Google OAuth connect (PKCE, per-tenant encrypted tokens)
+  · Permissions/ACL management, preferences, API keys
+  · Owner notifications & approval prompts via bridge POST /send
 ```
 
-**Multi-tenancy**: one Hermes process, one profile per tenant. Google tokens live encrypted in Postgres (`customer_google_tokens`), never as a shared file — prevents cross-tenant Workspace leaks.
+In v3 **no WhatsApp message transits the backend.** Inbound goes bridge → gateway
+session directly; the old webhook guard pipeline (rate limit → queue → cascade)
+was Evolution-era and has been deleted. Strangers are stopped at the bridge
+allowlist instead of being "held" by the backend.
 
-**Dropped vs v2.1**: Evolution API/openwa, LiteLLM, MCP server, whisper, kokoro (see ADR-0007).
-                    ↓
-          [Sliding-Window Rate Limiting (Redis)]
-                    ↓
-          [Per-Chat Sequential Queue (asyncio)]
-                    ↓
-          [Voice Transcription + DPDP Compliance]
-                    ↓
-          [ACL + Quiet Hours Evaluation]
-                    ↓
-          [Google Setup Flow & Command Parser]
-                    ↓
-          [WhatsApp Quoted Reply Context Parser]
-                    ↓
-          [Sequential Dispatch to Hermes Brain]
-```
+**Multi-tenancy**: one Hermes process, one profile per tenant. Google tokens live
+encrypted in Postgres (`customer_google_tokens`), never as a shared file.
 
 ---
 
 ## Key Files & Structure
 
-### Core backend API Files:
-- [webhooks.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/webhooks.py) — Inbound orchestrator: rate limiting, sequential queuing workers, permission cascade, quoted-reply context parsing.
-- [setup.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/setup.py) — Multi-tenant login (`dashboard_users` + argon2), tenant-aware Google connection status, system-status host metrics, onboarding screens, preferences.
-- [core/auth.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/core/auth.py) — Redis-backed tenant-scoped dashboard sessions (instant revocation).
-- [permissions.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/permissions.py) — Secured router executing concurrent whatsapp contact name lookups, 1+ character autocomplete contact search, and on-demand contact synchronization.
-- [oauth.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/api/oauth.py) — One-click "Connect Google" flow: PKCE + tenant_id in Redis state, callback writes encrypted `CustomerGoogleToken`.
-- [services/permission_service.py](file:///c:/Users/golla/Documents/Projects/whatsapp%20agent/Autonomous-Whatsapp-Agent/backend/app/services/permission_service.py) — The moat: `decide()` cascade (owner runs / authorized runs / stranger held + owner approval) and action-level PendingDecision approvals.
+### Backend API
+- [setup.py](backend/app/api/setup.py) — Multi-tenant login (`dashboard_users` + argon2), preferences, system-status host metrics, **disconnect** (deletes Baileys session dir on shared volume + restarts hermes), API keys CRUD.
+- [whatsapp_pairing.py](backend/app/api/whatsapp_pairing.py) — Pairing status/QR (reads session files on the shared volume), plus `GET/PUT /api/pairing/bridge`: runtime bridge config (mode `self-chat|bot`, `dm_policy`, `group_policy`, `require_mention`, `allow_from`) written into the shared volume + hermes restart via docker.sock.
+- [permissions.py](backend/app/api/permissions.py) — Secured router for users/trust/ACL management; contact search serves the Redis cache only (v3 has no live directory source).
+- [oauth.py](backend/app/api/oauth.py) — One-click "Connect Google": PKCE + tenant_id in Redis state, callback writes encrypted `CustomerGoogleToken`.
+- [health.py](backend/app/api/health.py) — `/health/detailed` reports postgres, redis, `whatsapp_bridge` (GET bridge /health) and hermes.
+
+### Services
+- [bridge_client.py](backend/app/services/bridge_client.py) — Hermes bridge HTTP client: `send_text(chat_id, msg)` → `POST /send {chatId, message}` with retry/backoff; `bridge_status()` → `GET /health`. Used for backend-originated DMs (approval notices, setup prompts).
+- [bridge_config_service.py](backend/app/services/bridge_config_service.py) — Reads/writes runtime bridge files on the shared volume (`bridge_env` sourced at hermes boot; `config.yaml` whatsapp policies) and restarts the hermes container over the docker socket.
+- [whatsapp_pairing_service.py](backend/app/services/whatsapp_pairing_service.py) — Shared-volume paths (`creds.json`, QR state) powering the dashboard pairing tab.
+- [agent_harness.py](backend/app/services/agent_harness.py) — Legacy dispatch helper (`dispatch_to_hermes`) kept for programmatic use: builds the omniWA system context, injects group-privacy directive for `@g.us` targets, redacts group-bound content (`_finalize_reply`). Not part of the live inbound path.
+- [phone_utils.py](backend/app/services/phone_utils.py) — libphonenumber validation/E.164 normalisation (ex-Evolution client).
+- [permission_service.py](backend/app/services/permission_service.py) — Action-level PendingDecision approvals (`<CODE> yes/no`); owner notification delivered via `bridge_client`. The inbound stranger-hold cascade is dormant since messages no longer transit the backend.
+- [group_privacy_service.py](backend/app/services/group_privacy_service.py) — Directive builder + regex redaction shared with the harness.
+
+### Hermes side
+- `hermes-plugin/SPIRIT_SOUL_OMNIWA.md` — canonical soul, deployed to `/opt/data/SOUL.md` in the container.
+- `hermes-plugin/omniwa-group-privacy` — deployed to `/opt/data/plugins/`: `pre_llm_call` hook injects the GROUP PRIVACY MODE directive into group turns; `transform_llm_output` scrubs emails/phones/long numerics from group-bound replies. This is the primary privacy guard at the true egress point.
 
 ---
 
 ## Permission System & Authentication
 
 ### Security Credentials:
-1. **Dashboard Authentication (multi-tenant)**: Accessing `/dashboard`, `/setup`, or admin REST routes requires a valid `omniwa_session` cookie. Login posts email + password against `dashboard_users` (argon2id hashes); a successful login stores `tenant_id:dashboard_user_id` in Redis under `dash_session:{sid}` (TTL 24h). Logout deletes the key — instant revocation. Legacy `ADMIN_PASSWORD` + `naru_session` remains as fallback only while no dashboard users exist.
-2. **Tenant isolation**: every dashboard query resolves the tenant via the session (`core/auth.get_principal`) and filters by `tenant_id`. Google tokens are encrypted per row (`customer_google_tokens`).
+1. **Dashboard Authentication (multi-tenant)**: `/dashboard`, `/setup`, admin REST routes require an `omniwa_session` cookie; login posts email + password against `dashboard_users` (argon2id); session stored in Redis under `dash_session:{sid}` (TTL 24h); logout deletes the key. Legacy `ADMIN_PASSWORD` + `naru_session` remains only while no dashboard users exist.
+2. **Tenant isolation**: every dashboard query resolves the tenant via the session (`core/auth.get_principal`) and filters by `tenant_id`; Google tokens encrypted per row.
 3. **Access Control Lists (WhatsApp side)**:
-   - **Owner** (`is_owner=true`): Approves contacts, modifies Preferences, links Google.
-   - **Authorized User** (`has_permission=true`): Granted access rights by the owner. Can chat in DMs and trigger mentions in groups.
-   - **Stranger** (`has_permission=false`): Message is **held** — PendingDecision created, owner receives an approval prompt; stranger sees "forwarded to owner" reply. Owner approves by replying `<CODE> yes`.
-4. **Group Privacy Layer (owner-data leak prevention)** — enforced at BOTH hops:
-   - **Hermes side** (`hermes-plugin/omniwa-group-privacy`, deployed to `/opt/data/plugins/`, enabled in config): with `HERMES_OWNS_WHATSAPP=true` the Baileys bridge generates AND delivers replies itself, so this is the primary guard. A `pre_llm_call` hook injects the GROUP PRIVACY MODE directive into group turns only; a `transform_llm_output` hook scrubs emails/phones/long numeric tokens from final group-bound replies. Group detection via gateway session contextvars (`@g.us` chat id). DMs, CLI, cron untouched.
-   - **Backend side** (`services/group_privacy_service.py`, wired in `agent_harness.dispatch_to_hermes`): same directive + redaction for the legacy dispatch path.
-   - **Display hardening**: WhatsApp platform has `tool_progress: false` and `streaming: false` in Hermes config, so groups never see tool-name bubbles or live-edited partial (pre-scrub) replies.
+   - **Owner** (`is_owner=true`): manages permissions, preferences, Google link, pairing.
+   - **Authorized User** (`has_permission=true`): may chat in DMs and trigger mentions in groups — *provided* their number/LID is in the bridge allowlist.
+   - **Stranger**: blocked at the bridge (`dm_policy=allowlist`). To grant access, the owner adds them via the Permissions page **and** ensures the number/LID appears in `allow_from` (`PUT /api/pairing/bridge` or the dashboard Connection Mode card).
+4. **Group Privacy Layer** — enforced Hermes-side by the `omniwa-group-privacy` plugin (directive injection + output scrubbing on group turns only; DMs, CLI, cron untouched). Display hardening: `tool_progress: false`, `streaming: false` so groups never see tool bubbles or partial pre-scrub replies. The backend mirror of these layers lives in `agent_harness` for any backend-dispatched reply.
+5. **Phone Numbers & Roles** — neither WhatsApp number is intrinsically a "bot": roles are configuration, not identity. `OWNER_WA_PHONE` feeds owner detection in OAuth/ACL flows. A dedicated bot number may be acquired later for bot mode; never assume which SIM scanned a pairing QR from the number alone.
 
 ---
 
-## Detailed Message Flow
+## Runtime WhatsApp Configuration
 
-```
-1. Evolution API pushes WhatsApp event to POST /webhook/openwa
-   ↓
-2. Verify Webhook Signature: Check X-Evolution-Signature (HMAC-SHA256) header
-   ↓
-3. Check Webhook Idempotency: Reject duplicates using event message ID inside Redis (TTL: 24h)
-   ↓
-4. Parse Evolution Event: Detect remote JID, text body, and check if it is a self-chat message
-   ↓
-5. Check Loop Prevention: Drop messages that originate from our own Bot API senders
-   ↓
-6. Sliding Window Rate Limiting: Assert sender requests do not exceed 20 / min via Redis `rl:{sender}`
-   ↓
-7. Per-Chat Queueing:
-   - Match message to chat_id Queue.
-   - If no Queue exists, launch worker task `_chat_worker(chat_id, queue)`.
-   - Drop messages and send a warning if queue length exceeds 5 (anti-spam buffer).
-   - Put message in Queue and return HTTP 200 {"status": "queued"} immediately.
-   ↓
-8. Queue Worker consumes message:
-   - Transcribe base64 voice recordings (if is_audio) using Groq/Whisper.
-   - DPDP Compliance Check: Drop group messages lacking explicit agent mentions.
-   - Retrieve / create database User entity.
-   - Owner Slash Command Check: Intercept and process commands (e.g. /configure).
-   - Setup Flow Interceptor: Direct owner to complete Calendar linking if missing.
-   - ACL Check: Drop if contact is blocked or logs silently during active Quiet Hours.
-   - Quoted Reply Context Check: Extract contextInfo -> quotedMessage, prefixing the text bubble.
-   - Sequential Dispatch: Call dispatch_to_hermes(sender_phone, finalized_prompt).
-   ↓
-9. dispatch_to_hermes posts message:
-   - Posts to Hermes Agent (8642) passing session-id (phone number) for memory mapping.
-   - Extracts the LLM choices text result and sends it back to the user via WhatsApp.
-```
+Single source of truth: `backend/.env` → `WHATSAPP_*` keys (compose `env_file`),
+plus runtime overrides written by the backend onto the shared `hermes_data`
+volume (`bridge_env` sourced by the hermes container command; policy block under
+`whatsapp:` in `config.yaml`). Effective order: config.yaml > env defaults.
+
+- Switch self-chat ↔ bot: dashboard Identity tab card, or `PUT /api/pairing/bridge` (restarts hermes; pairing session survives).
+- Disconnect/re-pair: dashboard WhatsApp tab (deletes session dir + restarts; fresh QR).
+- Allowlist entries include LIDs (e.g. `200283032441063@lid`) — always check `wa_block.yaml`/effective allowlist when debugging delivery.
 
 ---
 
@@ -123,38 +104,33 @@ WhatsApp User
 
 | Service | Port | Description |
 | :--- | :--- | :--- |
-| **postgres** | 5432 | Database backend saving users, preferences, ACL configs, and logs. |
-| **redis** | 6379 | Keeps session states, idempotency hashes, rate limit counters, and status QR data. |
-| **litellm** | 4000 | LiteLLM routing layer enabling fallbacks (GitHub -> Gemini -> Groq). |
-| **hermes** | 8642 | Nous Research ReAct agent loop (native memory & scheduling). |
-| **mcp-server** | 9000 | FastMCP tool bindings (Google Calendar, Drive, search, text-to-speech). |
-| **openwa** | 2785 | Baileys-based Evolution API protocol wrapper for WhatsApp connection. |
-| **backend** | 8000 | FastAPI webhook receiver, admin endpoints, and user management UI. |
-| **tunnel** | N/A | Cloudflare tunnel routing localhost traffic securely to api.narendar.tech. |
+| **postgres** | 5432 | Database backend saving users, preferences, ACL configs, audit logs. |
+| **redis** | 6379 | Dashboard sessions, rate counters, caches (contacts, QR, connection state). |
+| **hermes** | 8642 | Nous Research Hermes agent: gateway + OpenAI-compatible API + native Baileys bridge (owns WhatsApp transport). |
+| **backend** | 8000 | FastAPI control plane: dashboard, pairing/bridge config, OAuth, permissions, health. |
+| **tunnel** | N/A | Cloudflare tunnel routing api.narendar.tech to the stack. |
+
+Shared volume `hermes_data` mounts at `/opt/data` (hermes) and `/opt/hermes_data`
+(backend, rw): pairing session, SOUL.md, plugins, `bridge_env`, `config.yaml`.
 
 ---
 
 ## Testing Verification Checklist
 
-Run python integration test suites:
+Run the suite from `backend/` with the repo venv (system python lacks pytest):
+
 ```bash
-docker compose -f docker/docker-compose.yml exec -T backend python -m pytest -x --tb=short
+cd backend && ./.venv/Scripts/python.exe -m pytest -q
 ```
 
+- [x] Full suite green (~154 tests): endpoints, pairing, bridge config/client, permission cascade/service, group-privacy wiring, phone utils
 - [x] Unauthenticated dashboard routes redirect to `/login`
-- [x] Correct password input returns session cookie & authorizes `/dashboard`
-- [x] Inbound webhook requests reject invalid HMAC signatures
-- [x] Message spamming triggers sliding-window rate limiting in Redis
-- [x] Multi-message fire is queued per-chat and processed sequentially
-- [x] WhatsApp quoted message bubbles are parsed and context is prepended
-- [x] Invalid quiet hours time inputs trigger Pydantic schema validation errors
-- [x] Expired OAuth states return user-friendly glassmorphic HTML error pages
-- [x] Permission whitelists resolve user display names concurrently via `asyncio.gather`
-- [x] Endpoint `/permissions/reset` deletes non-owner and non-agent contacts correctly
-- [x] Agent setup cancellation preserves existing configurations during active replacements
-- [x] Outbound replies in `dual_number` mode route through the connected agent instance
-- [x] Autocomplete search threshold supports 1+ characters (frontend and backend)
-- [x] "Refresh Contacts" on-demand synchronization updates Redis cache from Baileys database
-- [x] Autocomplete UI employs 300ms debouncing, AbortController request cancellation, and local cache
-- [x] Agent session connection state monitored dynamically (`GET /api/agent/status`) with dashboard banner alerts
-- [x] Pytest-asyncio event loop teardown handles closed connections gracefully
+- [x] Bridge mode switch round-trip verified live (bot ↔ self-chat, bridge.log shows `mode:` flip)
+- [x] `POST /setup/disconnect` removes the Baileys session dir and restarts hermes
+- [x] `/health/detailed` reports `whatsapp_bridge: ok` + `hermes: ok`
+- [x] Invalid quiet-hours inputs rejected by Pydantic schema validation
+- [x] Expired OAuth states render user-friendly error pages
+- [x] Group-bound replies redacted (`_finalize_reply`), DMs untouched
+- [x] Contacts sync/search served cache-only (Evolution directory gone)
+
+Backend code changes require `docker restart whatsapp_calendar_backend` to go live.
