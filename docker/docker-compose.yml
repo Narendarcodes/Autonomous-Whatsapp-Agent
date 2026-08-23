@@ -72,7 +72,10 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: whatsapp_hermes
     restart: unless-stopped
-    command: gateway
+    # Source runtime overrides (e.g. WHATSAPP_MODE) written by the omniWA
+    # backend into the shared volume, then start the gateway. `set -a`
+    # exports every KEY=VALUE so the gateway process sees them.
+    command: ["bash", "-c", "if [ -f /opt/data/bridge_env ]; then set -a; . /opt/data/bridge_env; set +a; fi; exec hermes gateway"]
     stdin_open: true
     tty: true
     env_file:
@@ -136,6 +139,9 @@ services:
       - ../backend/tests:/app/tests:ro
       - token_storage:/app/tokens
       - logs:/app/logs
+      # Docker socket: lets the backend restart the hermes container when the
+      # dashboard switches WhatsApp bridge mode (self-chat <-> bot).
+      - /var/run/docker.sock:/var/run/docker.sock
       - hermes_data:/opt/hermes_data   # legacy default-tenant dev sync only
     networks:
       - calendar_network
