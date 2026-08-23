@@ -323,6 +323,44 @@ async def test_preferences_validation_checks(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_preferences_without_bot_mode_preserves_stored(db_session):
+    """v3: bot_mode is no longer a dashboard concept (Hermes bridge config owns
+    connection mode). POSTing preferences WITHOUT bot_mode must succeed and
+    leave stored bot_mode/bot_phone untouched."""
+    from app.services.preferences_service import preferences_service
+
+    owner_phone = settings.OWNER_WA_PHONE.lstrip("+") or "916300354385"
+    owner = User(wa_phone=owner_phone, is_owner=True, has_permission=True)
+    db_session.add(owner)
+    await db_session.commit()
+
+    await preferences_service.set(owner.id, "bot_mode", "self_chat")
+    await preferences_service.set(owner.id, "bot_phone", "9199998888777")
+
+    payload = {
+        "bot_name": "Jarvis",
+        "timezone": "Asia/Kolkata",
+        "quiet_hours_start": "22:00",
+        "quiet_hours_end": "07:00",
+        "stt_provider": "groq",
+        "tts_provider": "edge",
+        "tts_voice": "Female",
+    }
+    async with await get_auth_client() as ac:
+        resp = await ac.post("/api/preferences", json=payload)
+        assert resp.status_code == 200, resp.text
+
+        # Stored legacy values must survive the mode-less save
+        assert await preferences_service.get(owner.id, "bot_mode") == "self_chat"
+        assert await preferences_service.get(owner.id, "bot_phone") == "9199998888777"
+
+        # Other fields still saved
+        resp2 = await ac.get("/api/preferences")
+        assert resp2.status_code == 200
+        assert resp2.json()["bot_name"] == "Jarvis"
+
+
+@pytest.mark.asyncio
 async def test_agent_phone_endpoints(db_session, monkeypatch):
     """Test the agent phone linking (QR and polling status) endpoints."""
     from sqlalchemy import select

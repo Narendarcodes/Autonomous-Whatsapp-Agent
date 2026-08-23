@@ -247,7 +247,10 @@ async def dashboard(request: Request) -> Response:
 class PreferencesPayload(BaseModel):
     bot_name: str
     timezone: str
-    bot_mode: str
+    # v3: connection mode is owned by the Hermes bridge config
+    # (PUT /api/pairing/bridge), not dashboard preferences. Kept optional for
+    # backward compatibility with legacy clients.
+    bot_mode: str | None = None
     quiet_hours_start: str
     quiet_hours_end: str
     stt_provider: str
@@ -379,14 +382,16 @@ async def save_preferences(payload: PreferencesPayload, dependencies=Depends(ver
                 raise HTTPException(status_code=400, detail=validation.get("error", "Invalid agent phone number."))
         
         await preferences_service.set(owner.id, "bot_name", payload.bot_name)
-        await preferences_service.set(owner.id, "bot_mode", payload.bot_mode)
+        if payload.bot_mode is not None:  # v3: mode lives in Hermes bridge config now
+            await preferences_service.set(owner.id, "bot_mode", payload.bot_mode)
         await preferences_service.set(owner.id, "quiet_hours_start", payload.quiet_hours_start)
         await preferences_service.set(owner.id, "quiet_hours_end", payload.quiet_hours_end)
         await preferences_service.set(owner.id, "stt_provider", payload.stt_provider)
         await preferences_service.set(owner.id, "tts_provider", payload.tts_provider)
         await preferences_service.set(owner.id, "tts_voice", payload.tts_voice)
         await preferences_service.set(owner.id, "owner_phone", payload.owner_phone or "")
-        await preferences_service.set(owner.id, "bot_phone", payload.bot_phone or "")
+        if payload.bot_phone is not None:
+            await preferences_service.set(owner.id, "bot_phone", payload.bot_phone or "")
         await preferences_service.set(owner.id, "owner_name", payload.owner_name or "You (Owner)")
         
         owner.timezone = payload.timezone

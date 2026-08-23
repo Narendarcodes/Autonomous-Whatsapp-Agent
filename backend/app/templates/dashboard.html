@@ -203,34 +203,6 @@
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
             padding: 6px;
         }
-        /* Agent phone suggestion box — same style, different ID */
-        #agent-phone-suggestions {
-            position: absolute;
-            top: 102%;
-            left: 0;
-            right: 0;
-            z-index: 1100;
-            max-height: 260px;
-            overflow-y: auto;
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(16px);
-            border-radius: 12px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
-            padding: 6px;
-        }
-        /* QR Modal */
-        #agent-qr-modal {
-            display: none;
-            position: fixed;
-            inset: 0;
-            z-index: 9000;
-            background: rgba(0,0,0,0.55);
-            backdrop-filter: blur(6px);
-            align-items: center;
-            justify-content: center;
-        }
-        #agent-qr-modal.active { display: flex; }
-        #agent-qr-modal .qr-card {
             background: white;
             border-radius: 20px;
             padding: 32px;
@@ -626,77 +598,42 @@
                     <section class="glass-panel rounded-xl p-8 space-y-6">
                         <h3 class="font-h3 text-h3 text-on-surface flex items-center gap-2">
                             <span class="material-symbols-outlined text-primary">forum</span>
-                            Agent Mode
+                            WhatsApp Connection Mode
                         </h3>
+                        <p class="text-[13px] text-on-surface-variant -mt-2">How the agent is connected to WhatsApp. Switching restarts the agent brain (~1 minute) — your pairing session is kept.</p>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <!-- Self Chat mode card -->
-                            <button type="button" class="mode-card text-left p-4 rounded-lg border border-outline-variant hover:border-primary-container transition-all flex items-center gap-4 group cursor-pointer outline-none select-none" onclick="selectBotMode('self_chat')">
+                            <button type="button" class="mode-card text-left p-4 rounded-lg border border-outline-variant hover:border-primary-container transition-all flex items-center gap-4 group cursor-pointer outline-none select-none" onclick="selectBotMode('self-chat')">
                                 <div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center mode-icon-container">
                                     <span class="material-symbols-outlined text-secondary mode-icon">chat_bubble</span>
                                 </div>
                                 <div>
                                     <p class="font-label-md text-label-md text-on-surface font-bold">Self Chat</p>
-                                    <p class="text-[12px] text-on-surface-variant">Agent replies to yourself on your own number</p>
+                                    <p class="text-[12px] text-on-surface-variant">Agent paired to your own number — chat in “Message Yourself”</p>
                                 </div>
                             </button>
-                            <!-- Dual Number mode card -->
-                            <button type="button" class="mode-card text-left p-4 rounded-lg border border-outline-variant hover:border-primary-container transition-all flex items-center gap-4 group cursor-pointer outline-none select-none" onclick="selectBotMode('dual_number')">
+                            <!-- Bot mode card -->
+                            <button type="button" class="mode-card text-left p-4 rounded-lg border border-outline-variant hover:border-primary-container transition-all flex items-center gap-4 group cursor-pointer outline-none select-none" onclick="selectBotMode('bot')">
                                 <div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center mode-icon-container">
-                                    <span class="material-symbols-outlined text-secondary mode-icon">devices</span>
+                                    <span class="material-symbols-outlined text-secondary mode-icon">smart_toy</span>
                                 </div>
                                 <div>
-                                    <p class="font-label-md text-label-md text-on-surface font-bold">Dual Number</p>
-                                    <p class="text-[12px] text-on-surface-variant">Separate agent and owner phone numbers</p>
+                                    <p class="font-label-md text-label-md text-on-surface font-bold">Bot Number</p>
+                                    <p class="text-[12px] text-on-surface-variant">Dedicated number for the agent — replies come from it</p>
                                 </div>
                             </button>
                         </div>
 
-                        <!-- Dual Number Inputs (Initially Hidden) -->
-                        <div id="dual-number-settings" class="mt-6 space-y-4 hidden animate-fade-in-up border-t border-outline-variant/30 pt-6">
-                            <input type="hidden" id="input-owner-phone" />
-                            <div class="space-y-2 max-w-md">
-                                <label class="font-label-md text-label-md text-on-surface-variant font-bold flex items-center gap-1.5" for="input-bot-phone">
-                                    <span class="material-symbols-outlined text-secondary text-sm">robot_2</span>
-                                    Agent Number / Chat
-                                </label>
-                                <div class="flex items-center gap-2">
-                                    <div class="relative flex-grow flex items-center">
-                                        <span class="absolute left-4 text-on-surface-variant/60 material-symbols-outlined text-[20px]">smartphone</span>
-                                        <input class="w-full pl-12 pr-12 py-3 rounded-lg border border-outline-variant focus:border-secondary focus:ring-4 focus:ring-secondary/10 outline-none transition-all font-body-md bg-white disabled:bg-surface-container/50 disabled:text-on-surface/60" id="input-bot-phone" placeholder="Search by name or type number..." autocomplete="off" type="text"/>
-                                        <!-- Green checkmark shown when linked -->
-                                        <span id="agent-phone-status-icon" class="absolute right-4 text-green-500 material-symbols-outlined text-[22px] hidden" style="font-variation-settings:'FILL' 1">check_circle</span>
-                                        <!-- Agent phone suggestions dropdown -->
-                                        <div id="agent-phone-suggestions" class="hidden"></div>
-                                    </div>
-                                    <button type="button" onclick="triggerContactSync()" class="p-3 border border-outline-variant bg-white text-secondary hover:bg-surface-container hover:text-primary transition-all rounded-lg flex items-center justify-center shrink-0" title="Refresh contacts from WhatsApp">
-                                        <span class="material-symbols-outlined text-[20px]">sync</span>
-                                    </button>
-                                </div>
-                                <p class="text-[11px] text-on-surface-variant/60">The WhatsApp number used as the agent interface. A QR code will be sent to link it.</p>
-                                <div id="agent-phone-buttons-wrap" class="pt-2 flex items-center gap-3">
-                                    <!-- Link button (disabled/white outline initially) -->
-                                    <button type="button" id="btn-link-agent-phone" onclick="openAgentQRModal()" class="flex items-center gap-2 px-5 py-2.5 bg-white text-on-surface/40 border border-outline-variant/60 rounded-lg font-bold text-sm select-none outline-none cursor-not-allowed" disabled>
-                                        <span class="material-symbols-outlined text-[18px]">qr_code_scanner</span>
-                                        <span>Link Agent Number via QR</span>
-                                    </button>
-                                    <!-- Change button (hidden initially) -->
-                                    <button type="button" id="btn-change-agent-phone" onclick="enableAgentPhoneEdit()" class="hidden flex items-center gap-2 px-5 py-2.5 bg-white text-on-surface border border-outline-variant rounded-lg font-bold text-sm shadow hover:bg-surface-container transition-all select-none outline-none">
-                                        <span class="material-symbols-outlined text-[18px]">edit</span>
-                                        <span>Change Agent Number</span>
-                                    </button>
-                                    <!-- Reconnect button (shown when agent is disconnected) -->
-                                    <button type="button" id="btn-reconnect-agent" onclick="openAgentQRModal()" class="hidden flex items-center gap-2 px-5 py-2.5 bg-orange-500 text-white rounded-lg font-bold text-sm shadow hover:bg-orange-600 active:scale-95 transition-all select-none outline-none">
-                                        <span class="material-symbols-outlined text-[18px]">wifi_off</span>
-                                        <span>Reconnect Agent</span>
-                                    </button>
-                                </div>
-                                <!-- Agent live status banner (shown when bot_phone is configured) -->
-                                <div id="agent-status-banner" class="hidden mt-3 rounded-lg px-4 py-2.5 flex items-center gap-2 text-xs font-medium transition-all">
-                                    <span id="agent-status-banner-icon" class="material-symbols-outlined text-base flex-shrink-0" style="font-variation-settings:'FILL' 1">circle</span>
-                                    <span id="agent-status-banner-text">Checking status...</span>
-                                </div>
-                            </div>
+                        <!-- Apply bar -->
+                        <div class="mt-2 flex flex-wrap items-center gap-3">
+                            <button type="button" id="btn-apply-bridge-mode" onclick="applyBridgeMode()" disabled
+                                class="flex items-center gap-2 px-5 py-2.5 bg-white text-on-surface/40 border border-outline-variant/60 rounded-lg font-bold text-sm select-none outline-none cursor-not-allowed">
+                                <span class="material-symbols-outlined text-[18px]">sync</span>
+                                <span>Apply &amp; Restart Agent</span>
+                            </button>
+                            <span id="bridge-mode-status" class="text-xs font-medium text-on-surface-variant"></span>
                         </div>
+                        <p id="bridge-policy-summary" class="text-[11px] text-on-surface-variant/70"></p>
                     </section>
 
                     <!-- Vocal Selection Panel -->
@@ -1546,8 +1483,7 @@
     const allTabs = ['whatsapp', 'identity', 'connectors', 'acl', 'resources', 'soul'];
     let usersList = [];
     let selectedVoice = 'Female';
-    let selectedBotMode = 'dual_number';
-    let loadedBotPhone = ''; // Track the current configured agent phone to detect changes
+    let selectedBotMode = 'self-chat';   // staged WhatsApp connection mode (self-chat | bot)
 
     function setPanelState(target, state, message, actionHtml = '') {
         if (!target) return;
@@ -2339,42 +2275,13 @@
             document.getElementById('input-owner-name').value = data.owner_name || 'You (Owner)';
             document.getElementById('input-quiet-start').value = data.quiet_hours_start || '22:00';
             document.getElementById('input-quiet-end').value = data.quiet_hours_end || '07:00';
-            document.getElementById('input-owner-phone').value = data.owner_phone || '';
-            const botPhoneField = document.getElementById('input-bot-phone');
-            botPhoneField.value = data.bot_phone || '';
-            loadedBotPhone = (data.bot_phone || '').replace('+', '').trim();
-            
-            const statusIcon = document.getElementById('agent-phone-status-icon');
-            const changeBtn = document.getElementById('btn-change-agent-phone');
-            const linkBtn = document.getElementById('btn-link-agent-phone');
-            
-            if (loadedBotPhone) {
-                botPhoneField.disabled = true;
-                if (statusIcon) statusIcon.classList.remove('hidden');
-                if (changeBtn) changeBtn.classList.remove('hidden');
-                if (linkBtn) linkBtn.classList.add('hidden');
-                // Fetch live agent session state to reflect connection health
-                refreshAgentStatus();
-            } else {
-                botPhoneField.disabled = false;
-                if (statusIcon) statusIcon.classList.add('hidden');
-                if (changeBtn) changeBtn.classList.add('hidden');
-                if (linkBtn) {
-                    linkBtn.classList.remove('hidden');
-                    window.updateAgentLinkButtonState();
-                }
-                // No agent phone — hide status banner
-                const banner = document.getElementById('agent-status-banner');
-                if (banner) banner.classList.add('hidden');
-            }
-            
+
             // Voice Choice
             selectedVoice = data.tts_voice || 'Female';
             selectVoice(selectedVoice);
 
-            // Bot Mode Choice
-            selectedBotMode = data.bot_mode || 'dual_number';
-            selectBotMode(selectedBotMode);
+            // WhatsApp connection mode (Hermes bridge config — NOT preferences)
+            await loadBridgeConfig();
 
             // STT/TTS Provider badge updates in System Resources
             document.getElementById('stt-provider-badge').innerText = data.stt_provider || 'groq';
@@ -2449,36 +2356,108 @@
             }
         }
 
-        // Toggle visibility of dual phone number inputs
-        const dualSettings = document.getElementById('dual-number-settings');
-        if (dualSettings) {
-            if (modeName === 'dual_number') {
-                dualSettings.classList.remove('hidden');
-            } else {
-                dualSettings.classList.add('hidden');
+        // Enable Apply only when the staged mode differs from the live one
+        updateBridgeApplyButton();
+    }
+
+    // =========================================================
+    // WhatsApp Connection Mode (Hermes bridge config)
+    // =========================================================
+    let liveBridgeMode = 'self-chat';
+
+    async function loadBridgeConfig() {
+        const statusEl = document.getElementById('bridge-mode-status');
+        try {
+            const resp = await fetch('/api/pairing/bridge', { cache: 'no-store' });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            liveBridgeMode = data.mode || 'self-chat';
+            selectedBotMode = liveBridgeMode;
+            selectBotMode(liveBridgeMode);
+
+            const policies = [];
+            policies.push(`DMs: ${data.dm_policy || 'allowlist'}`);
+            policies.push(`Groups: ${data.group_policy || 'allowlist'}${data.require_mention ? ' (@mention)' : ''}`);
+            policies.push(`Allowed senders: ${(data.allow_from || []).length}`);
+            if (data.restart_supported === false) {
+                policies.push('\u26a0 Docker socket not mounted \u2014 apply needs manual restart');
             }
+            const summaryEl = document.getElementById('bridge-policy-summary');
+            if (summaryEl) summaryEl.innerText = policies.join('  \u00b7  ');
+            if (statusEl) statusEl.innerText = '';
+        } catch (e) {
+            console.error('Failed to load bridge config:', e);
+            if (statusEl) statusEl.innerText = 'Could not load connection mode.';
         }
     }
+
+    function updateBridgeApplyButton() {
+        const applyBtn = document.getElementById('btn-apply-bridge-mode');
+        if (!applyBtn) return;
+        if (selectedBotMode !== liveBridgeMode) {
+            applyBtn.disabled = false;
+            applyBtn.className = 'flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-bold text-sm shadow hover:brightness-110 active:scale-95 transition-all select-none outline-none cursor-pointer';
+        } else {
+            applyBtn.disabled = true;
+            applyBtn.className = 'flex items-center gap-2 px-5 py-2.5 bg-white text-on-surface/40 border border-outline-variant/60 rounded-lg font-bold text-sm select-none outline-none cursor-not-allowed';
+        }
+    }
+
+    async function applyBridgeMode() {
+        const applyBtn = document.getElementById('btn-apply-bridge-mode');
+        const statusEl = document.getElementById('bridge-mode-status');
+        if (!applyBtn || applyBtn.disabled) return;
+        const targetMode = selectedBotMode;
+        const modeLabel = targetMode === 'bot' ? 'Bot Number' : 'Self Chat';
+
+        const confirmed = await window.showConfirmModal(
+            `Switch to ${modeLabel}?`,
+            'The agent brain restarts to apply the new connection mode (~1 minute). Your WhatsApp pairing is kept.'
+        );
+        if (!confirmed) return;
+
+        applyBtn.disabled = true;
+        applyBtn.className = 'flex items-center gap-2 px-5 py-2.5 bg-white text-on-surface/40 border border-outline-variant/60 rounded-lg font-bold text-sm select-none outline-none cursor-not-allowed';
+        if (statusEl) statusEl.innerText = 'Applying \u2014 restarting agent brain\u2026';
+
+        try {
+            const resp = await fetch('/api/pairing/bridge', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: targetMode })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.detail || `HTTP ${resp.status}`);
+            }
+            const data = await resp.json();
+            liveBridgeMode = targetMode;
+            if (statusEl) {
+                statusEl.innerText = data.restarted === false
+                    ? 'Saved. Restart the hermes container manually to activate.'
+                    : 'Applied! Agent reconnecting on WhatsApp\u2026';
+            }
+            showToast(data.restarted === false ? 'Saved \u2014 manual restart needed.' : 'Connection mode updated!', 'success');
+        } catch (e) {
+            console.error('Bridge mode switch failed:', e);
+            if (statusEl) statusEl.innerText = 'Switch failed: ' + e.message;
+            showToast('Could not switch mode: ' + e.message, 'error');
+        } finally {
+            updateBridgeApplyButton();
+        }
+    }
+    window.applyBridgeMode = applyBridgeMode;
+    window.loadBridgeConfig = loadBridgeConfig;
 
     async function savePreferences() {
         const bot_name = document.getElementById('input-bot-name').value.trim();
         const owner_name = document.getElementById('input-owner-name').value.trim();
         const quiet_hours_start = document.getElementById('input-quiet-start').value;
         const quiet_hours_end = document.getElementById('input-quiet-end').value;
-        const owner_phone = document.getElementById('input-owner-phone').value.trim();
-        const bot_phone = document.getElementById('input-bot-phone').value.trim().replace(/\D/g, '');
-        
-        // Client-side phone number validation (7-15 digits for standard numbers)
-        if (selectedBotMode === 'dual_number' && bot_phone) {
-            if (bot_phone.length < 7 || bot_phone.length > 15) {
-                showToast('Invalid agent phone number. Must be 7 to 15 digits.', 'error');
-                return;
-            }
-        }
-        // Note: If you want to CHANGE the agent number, use the "Link Agent Number via QR" button below the field.
-        // The save button just persists the currently loaded bot_phone alongside other preferences.
 
-        
+        // Connection mode is NOT saved here — it lives in the Hermes bridge
+        // config (Identity tab → "Apply & Restart Agent" → PUT /api/pairing/bridge).
+
         // Keep existing providers unchanged
         const stt_provider = document.getElementById('stt-provider-badge').innerText;
         const tts_provider = document.getElementById('tts-provider-badge').innerText;
@@ -2487,14 +2466,11 @@
             bot_name,
             owner_name,
             timezone: 'Asia/Kolkata', // default timezone
-            bot_mode: selectedBotMode,
             quiet_hours_start,
             quiet_hours_end,
             stt_provider,
             tts_provider,
-            tts_voice: selectedVoice,
-            owner_phone,
-            bot_phone
+            tts_voice: selectedVoice
         };
 
         const commitBtn = document.getElementById('commit-btn');
@@ -2572,34 +2548,43 @@
     }
 
     // Access Control Whitelist Table Flow
-    let currentBotMode = 'self_chat';
 
-    function renderACLModeBanner(botMode) {
+    async function renderACLModeBanner() {
         const bannerContainer = document.getElementById('acl-mode-banner');
         if (!bannerContainer) return;
-        
-        bannerContainer.classList.remove('hidden');
-        if (botMode === 'self_chat') {
-            bannerContainer.innerHTML = `
-                <div class="p-4 bg-orange-50 border border-orange-200 text-orange-800 rounded-xl flex items-start gap-3 shadow-sm animate-fade-in-up">
-                    <span class="material-symbols-outlined text-orange-500 mt-0.5" style="font-variation-settings: 'FILL' 1;">info</span>
-                    <div>
-                        <p class="font-bold text-sm">Self Chat Mode Active</p>
-                        <p class="text-xs mt-0.5 opacity-90">In Self Chat mode, the agent only responds to your own messages. Other whitelisted contacts below are currently bypassed and will not be processed by the agent. To enable multiple users, switch the agent mode to <strong>Dual Number</strong> in the <a href="javascript:showTab('identity')" class="underline font-semibold hover:text-orange-950">Agent Identity</a> tab.</p>
-                    </div>
-                </div>
-            `;
-        } else {
-            bannerContainer.innerHTML = `
-                <div class="p-4 bg-green-50 border border-green-200 text-green-800 rounded-xl flex items-start gap-3 shadow-sm animate-fade-in-up">
-                    <span class="material-symbols-outlined text-green-600 mt-0.5" style="font-variation-settings: 'FILL' 1;">check_circle</span>
-                    <div>
-                        <p class="font-bold text-sm">Dual Number Mode Active</p>
-                        <p class="text-xs mt-0.5 opacity-90">The agent is operating on a separate number. It will respond to you and any active whitelisted contacts below.</p>
-                    </div>
-                </div>
-            `;
+
+        // Connection mode now lives in the Hermes bridge config, not preferences.
+        let modeLabel = '';
+        let modeHint = '';
+        try {
+            const resp = await fetch('/api/pairing/bridge', { cache: 'no-store' });
+            if (resp.ok) {
+                const bridge = await resp.json();
+                if (bridge.mode === 'bot') {
+                    modeLabel = 'Bot Number Mode Active';
+                    modeHint = 'The agent is operating on a dedicated number. It responds to you and any active whitelisted contacts below.';
+                } else {
+                    modeLabel = 'Self Chat Mode Active';
+                    modeHint = 'The agent is paired to your own number and chats with you in \u201cMessage Yourself\u201d. Switch to Bot Number in the Agent Identity tab to serve multiple users.';
+                }
+            }
+        } catch (e) { /* banner is best-effort */ }
+
+        if (!modeLabel) {
+            bannerContainer.classList.add('hidden');
+            return;
         }
+
+        bannerContainer.classList.remove('hidden');
+        bannerContainer.innerHTML = `
+            <div class="p-4 bg-secondary/5 border border-secondary/20 text-on-surface rounded-xl flex items-start gap-3 shadow-sm animate-fade-in-up">
+                <span class="material-symbols-outlined text-secondary mt-0.5" style="font-variation-settings: 'FILL' 1;">forum</span>
+                <div>
+                    <p class="font-bold text-sm">${modeLabel}</p>
+                    <p class="text-xs mt-0.5 opacity-90">${modeHint}</p>
+                </div>
+            </div>
+        `;
     }
 
     async function loadACLUsers() {
@@ -2634,8 +2619,7 @@
             }
             const data = await resp.json();
             usersList = data.users || [];
-            currentBotMode = data.bot_mode || 'self_chat';
-            renderACLModeBanner(currentBotMode);
+            renderACLModeBanner();
             filterUsersTable();
         } catch (e) {
             console.error('Failed to load whitelisted ACL contacts:', e);
@@ -3320,70 +3304,6 @@
     // =========================================================
     // Agent Status Live Check
     // =========================================================
-    async function refreshAgentStatus() {
-        const statusIcon = document.getElementById('agent-phone-status-icon');
-        const banner = document.getElementById('agent-status-banner');
-        const bannerIcon = document.getElementById('agent-status-banner-icon');
-        const bannerText = document.getElementById('agent-status-banner-text');
-        const reconnectBtn = document.getElementById('btn-reconnect-agent');
-        const changeBtn = document.getElementById('btn-change-agent-phone');
-        if (!banner) return;
-
-        try {
-            const resp = await fetch('/api/agent/status');
-            if (!resp.ok) return;
-            const data = await resp.json();
-
-            if (data.state === 'not_configured') {
-                banner.classList.add('hidden');
-                return;
-            }
-
-            banner.classList.remove('hidden');
-
-            if (data.state === 'open') {
-                // Connected — green checkmark
-                if (statusIcon) {
-                    statusIcon.innerText = 'check_circle';
-                    statusIcon.className = 'absolute right-4 text-green-500 material-symbols-outlined text-[22px]';
-                    statusIcon.style.fontVariationSettings = "'FILL' 1";
-                    statusIcon.classList.remove('hidden');
-                }
-                banner.className = 'mt-3 rounded-lg px-4 py-2.5 flex items-center gap-2 text-xs font-medium transition-all bg-green-50 border border-green-200 text-green-700';
-                if (bannerIcon) { bannerIcon.innerText = 'check_circle'; bannerIcon.className = 'material-symbols-outlined text-base flex-shrink-0 text-green-500'; }
-                if (bannerText) bannerText.innerText = `Connected — +${data.bot_phone} is active`;
-                if (reconnectBtn) reconnectBtn.classList.add('hidden');
-                if (changeBtn) changeBtn.classList.remove('hidden');
-            } else if (data.state === 'connecting') {
-                // Connecting — yellow
-                if (statusIcon) {
-                    statusIcon.innerText = 'pending';
-                    statusIcon.className = 'absolute right-4 text-yellow-500 material-symbols-outlined text-[22px] animate-pulse';
-                    statusIcon.style.fontVariationSettings = "'FILL' 1";
-                    statusIcon.classList.remove('hidden');
-                }
-                banner.className = 'mt-3 rounded-lg px-4 py-2.5 flex items-center gap-2 text-xs font-medium transition-all bg-yellow-50 border border-yellow-200 text-yellow-700';
-                if (bannerIcon) { bannerIcon.innerText = 'pending'; bannerIcon.className = 'material-symbols-outlined text-base flex-shrink-0 text-yellow-500 animate-pulse'; }
-                if (bannerText) bannerText.innerText = `Connecting +${data.bot_phone}... Scan the QR in the modal.`;
-                if (reconnectBtn) reconnectBtn.classList.add('hidden');
-            } else {
-                // Disconnected / unknown — orange/red warning with Reconnect button
-                if (statusIcon) {
-                    statusIcon.innerText = 'warning';
-                    statusIcon.className = 'absolute right-4 text-orange-500 material-symbols-outlined text-[22px]';
-                    statusIcon.style.fontVariationSettings = "'FILL' 1";
-                    statusIcon.classList.remove('hidden');
-                }
-                banner.className = 'mt-3 rounded-lg px-4 py-2.5 flex items-center gap-2 text-xs font-medium transition-all bg-orange-50 border border-orange-200 text-orange-700';
-                if (bannerIcon) { bannerIcon.innerText = 'wifi_off'; bannerIcon.className = 'material-symbols-outlined text-base flex-shrink-0 text-orange-500'; }
-                if (bannerText) bannerText.innerText = `Agent +${data.bot_phone} is disconnected. Click Reconnect to re-link.`;
-                if (reconnectBtn) reconnectBtn.classList.remove('hidden');
-                if (changeBtn) changeBtn.classList.add('hidden');
-            }
-        } catch (e) {
-            console.error('Agent status check failed:', e);
-        }
-    }
 
     // Main mount logic
     async function loadDashboardData() {
@@ -3427,8 +3347,6 @@
         setInterval(checkMcpStatus, 20000);
         setInterval(loadTelemetry, 10000);
         setInterval(updateSystemResources, 5000);
-        // Poll agent session state every 30 seconds
-        setInterval(refreshAgentStatus, 30000);
     }
 
     // Watch bot personality name updates to synchronize UI text dynamically
@@ -3483,7 +3401,6 @@
     // Global autocomplete search cache & abort controllers
     const searchCache = {};
     let contactSearchAbortController = null;
-    let agentSearchAbortController = null;
 
     // Contact Synchronization trigger
     async function triggerContactSync() {
@@ -3594,308 +3511,6 @@
             suggestionsContainer.classList.add('hidden');
         }
     };
-
-    // =========================================================
-    // Agent Phone Suggestion Box (in Agent Identity tab)
-    // =========================================================
-    const agentPhoneInput = document.getElementById('input-bot-phone');
-    const agentSuggestions = document.getElementById('agent-phone-suggestions');
-    let agentDebounce = null;
-
-    window.updateAgentLinkButtonState = function() {
-        const phoneInput = document.getElementById('input-bot-phone');
-        const linkBtn = document.getElementById('btn-link-agent-phone');
-        if (!phoneInput || !linkBtn) return;
-        
-        const val = phoneInput.value.trim().replace(/\D/g, '');
-        if (val.length >= 10) {
-            linkBtn.className = "flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-lg font-bold text-sm shadow hover:brightness-110 active:scale-95 transition-all select-none outline-none cursor-pointer";
-            linkBtn.disabled = false;
-        } else {
-            linkBtn.className = "flex items-center gap-2 px-5 py-2.5 bg-white text-on-surface/40 border border-outline-variant/60 rounded-lg font-bold text-sm select-none outline-none cursor-not-allowed";
-            linkBtn.disabled = true;
-        }
-    };
-
-    window.enableAgentPhoneEdit = function() {
-        const phoneInput = document.getElementById('input-bot-phone');
-        const statusIcon = document.getElementById('agent-phone-status-icon');
-        const changeBtn = document.getElementById('btn-change-agent-phone');
-        const linkBtn = document.getElementById('btn-link-agent-phone');
-        
-        if (phoneInput) {
-            phoneInput.disabled = false;
-            phoneInput.focus();
-        }
-        if (statusIcon) statusIcon.classList.add('hidden');
-        if (changeBtn) changeBtn.classList.add('hidden');
-        if (linkBtn) {
-            linkBtn.classList.remove('hidden');
-            window.updateAgentLinkButtonState();
-        }
-    };
-
-    if (agentPhoneInput && agentSuggestions) {
-        agentPhoneInput.addEventListener('input', (e) => {
-            const query = e.target.value.trim();
-            clearTimeout(agentDebounce);
-
-            window.updateAgentLinkButtonState();
-
-            if (!query || query.length < 1) {
-                agentSuggestions.innerHTML = '';
-                agentSuggestions.classList.add('hidden');
-                return;
-            }
-
-            if (agentSearchAbortController) {
-                agentSearchAbortController.abort();
-            }
-            agentSearchAbortController = new AbortController();
-            const signal = agentSearchAbortController.signal;
-
-            agentDebounce = setTimeout(async () => {
-                const cacheKey = `agent:${query}`;
-                if (searchCache[cacheKey]) {
-                    renderAgentSuggestions(searchCache[cacheKey], query);
-                    return;
-                }
-
-                try {
-                    const resp = await fetch(`/api/contacts/search?q=${encodeURIComponent(query)}`, { signal });
-                    if (!resp.ok) return;
-                    const contacts = await resp.json();
-                    if (contacts && contacts.length > 0) {
-                        const personal = contacts.filter(c => !c.is_group);
-                        searchCache[cacheKey] = personal;
-                        renderAgentSuggestions(personal, query);
-                    } else {
-                        agentSuggestions.innerHTML = '';
-                        agentSuggestions.classList.add('hidden');
-                    }
-                } catch (err) {
-                    if (err.name !== 'AbortError') {
-                        console.error('Agent phone contact search failed:', err);
-                    }
-                }
-            }, 300);
-        });
-
-        document.addEventListener('click', (e) => {
-            if (e.target !== agentPhoneInput && !agentSuggestions.contains(e.target)) {
-                agentSuggestions.classList.add('hidden');
-            }
-        });
-    }
-
-    function renderAgentSuggestions(personal, query) {
-        if (personal && personal.length > 0) {
-            agentSuggestions.innerHTML = personal.map(c => {
-                const highlightedName = highlightMatch(c.name, query);
-                const highlightedPhone = highlightMatch(`+${c.phone}`, query);
-                return `
-                    <div class="suggestion-item font-normal text-sm" role="button" tabindex="0" aria-label="Select agent phone suggestion ${highlightedName}" onclick="selectAgentPhoneSuggestion('${c.phone}')">
-                        <span class="material-symbols-outlined text-secondary text-base">smartphone</span>
-                        <div class="flex-grow text-left">
-                            <p class="text-xs text-on-surface">${highlightedName}</p>
-                            <p class="text-[10px] font-mono text-on-surface-variant">${highlightedPhone}</p>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-            agentSuggestions.classList.remove('hidden');
-        } else {
-            agentSuggestions.innerHTML = '';
-            agentSuggestions.classList.add('hidden');
-        }
-    }
-
-    window.selectAgentPhoneSuggestion = function(phone) {
-        if (agentPhoneInput) agentPhoneInput.value = phone;
-        if (agentSuggestions) { agentSuggestions.innerHTML = ''; agentSuggestions.classList.add('hidden'); }
-        window.updateAgentLinkButtonState();
-    };
-
-    // =========================================================
-    // Agent QR Modal Logic
-    // =========================================================
-    let _agentQRPollInterval = null;
-    let _agentQRPendingPhone = '';
-    let _agentQRLinkSuccess = false;
-
-    window.openAgentQRModal = async function() {
-        const phone = (agentPhoneInput ? agentPhoneInput.value.trim().replace(/\D/g,'') : '');
-        if (!phone || phone.length < 7) {
-            showToast('Please enter a valid agent phone number first.', 'error');
-            return;
-        }
-
-        // Check if there's already a linked agent phone
-        if (loadedBotPhone && loadedBotPhone !== phone) {
-            const confirmed = await window.showConfirmModal(
-                "Replace Agent Number",
-                `There is already a number +${loadedBotPhone} configured as the agent chat interface. Do you want to replace it with +${phone}? This will disconnect the previous agent session.`
-            );
-            if (!confirmed) return;
-        } else {
-            const confirmed = await window.showConfirmModal(
-                "Link Agent Number",
-                `Are you sure you want to link +${phone} as the Agent Chat interface? You will need to scan the QR code to connect.`
-            );
-            if (!confirmed) return;
-        }
-
-        _agentQRLinkSuccess = false;
-        _agentQRPendingPhone = phone;
-        _showAgentQRModal(`<div class="flex flex-col items-center justify-center py-10 gap-4">
-            <span class="material-symbols-outlined text-5xl text-secondary animate-spin" style="animation-duration:1.5s">refresh</span>
-            <p class="text-sm text-on-surface-variant font-medium">Preparing agent session...</p>
-        </div>`, phone, false);
-
-        try {
-            const resp = await fetch('/api/agent-phone/request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phone })
-            });
-            const data = await resp.json();
-
-            if (!resp.ok) {
-                closeAgentQRModal();
-                showToast(data.detail || 'Failed to start agent phone setup.', 'error');
-                return;
-            }
-
-            if (data.qr) {
-                _showAgentQRModal(`
-                    <img src="${data.qr.startsWith('data:') ? data.qr : 'data:image/png;base64,' + data.qr}"
-                         alt="Agent WhatsApp QR Code"
-                         class="w-56 h-56 mx-auto rounded-xl border-4 border-secondary/30 shadow-md" />
-                `, phone, true);
-                startQRPolling();
-            } else {
-                closeAgentQRModal();
-                showToast('QR code not available. Try again in a moment.', 'error');
-            }
-        } catch (e) {
-            closeAgentQRModal();
-            showToast('Network error starting agent setup: ' + e.message, 'error');
-        }
-    };
-
-    function _showAgentQRModal(qrContent, phone, showTimer) {
-        let modal = document.getElementById('agent-qr-modal');
-        if (!modal) {
-            modal = document.createElement('div');
-            modal.id = 'agent-qr-modal';
-            document.body.appendChild(modal);
-        }
-        modal.innerHTML = `
-            <div class="qr-card">
-                <div class="flex items-center justify-between mb-5">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-secondary text-2xl" style="font-variation-settings:'FILL' 1">qr_code_scanner</span>
-                        <h3 class="font-bold text-lg text-on-surface">Link Agent Number</h3>
-                    </div>
-                    <button onclick="closeAgentQRModal()" aria-label="Close agent QR setup" class="text-on-surface-variant hover:text-error transition-colors rounded-full w-8 h-8 flex items-center justify-center hover:bg-error/10">
-                        <span class="material-symbols-outlined text-xl">close</span>
-                    </button>
-                </div>
-
-                <div id="qr-display-area" class="mb-5">${qrContent}</div>
-
-                ${showTimer ? `
-                <div class="bg-secondary/8 rounded-xl p-4 text-left space-y-2 mb-4">
-                    <p class="text-xs font-bold text-secondary flex items-center gap-1.5">
-                        <span class="material-symbols-outlined text-sm" style="font-variation-settings:'FILL' 1">smartphone</span>
-                        Scan on +${phone}
-                    </p>
-                    <ol class="text-[11px] text-on-surface-variant space-y-1 list-decimal list-inside">
-                        <li>Open WhatsApp on your <strong>second phone</strong> (+${phone})</li>
-                        <li>Tap <strong>⋮ Menu → Linked Devices → Link a Device</strong></li>
-                        <li>Point your camera at the QR code above</li>
-                    </ol>
-                </div>
-                <div class="flex items-center gap-2 text-[11px] text-on-surface-variant/70">
-                    <span class="material-symbols-outlined text-sm text-orange-500">timer</span>
-                    QR expires in ~5 minutes. Auto-checking connection...
-                </div>` : ''}
-            </div>
-        `;
-        modal.classList.add('active');
-    }
-
-    window.closeAgentQRModal = async function() {
-        const modal = document.getElementById('agent-qr-modal');
-        if (modal) modal.classList.remove('active');
-        if (_agentQRPollInterval) { clearInterval(_agentQRPollInterval); _agentQRPollInterval = null; }
-        
-        if (!_agentQRLinkSuccess && _agentQRPendingPhone) {
-            _agentQRPendingPhone = '';
-            try {
-                const resp = await fetch('/api/agent-phone/cancel', { method: 'POST' });
-                if (resp.ok) {
-                    showToast('Agent linking canceled. Switched to Self Chat.', 'info');
-                    await loadPreferences();
-                    await loadACLUsers();
-                }
-            } catch (e) {
-                console.error('Failed to cancel agent linking:', e);
-            }
-        }
-    };
-
-    function startQRPolling() {
-        if (_agentQRPollInterval) clearInterval(_agentQRPollInterval);
-        _agentQRPollInterval = setInterval(async () => {
-            try {
-                const resp = await fetch('/api/agent-phone/qr-status');
-                const data = await resp.json();
-
-                if (data.state === 'open' && data.phone) {
-                    clearInterval(_agentQRPollInterval);
-                    _agentQRPollInterval = null;
-
-                    // Show success in modal
-                    const display = document.getElementById('qr-display-area');
-                    if (display) {
-                        display.innerHTML = `
-                            <div class="flex flex-col items-center gap-3 py-6">
-                                <span class="material-symbols-outlined text-6xl text-green-500" style="font-variation-settings:'FILL' 1">check_circle</span>
-                                <p class="font-bold text-on-surface">Agent Connected!</p>
-                                <p class="text-xs text-on-surface-variant">+${data.phone} is now the agent chat interface.</p>
-                            </div>
-                        `;
-                    }
-                    showToast(`✅ Agent number +${data.phone} linked successfully!`, 'success');
-                    loadedBotPhone = data.phone;
-                    if (agentPhoneInput) agentPhoneInput.value = data.phone;
-
-                    _agentQRLinkSuccess = true;
-                    // Force the UI state to change to dual_number immediately!
-                    selectBotMode('dual_number');
-
-                    // Save the entire form automatically and reload everything
-                    setTimeout(async () => {
-                        closeAgentQRModal();
-                        await savePreferences();
-                        await loadACLUsers();
-                    }, 2000);
-
-                } else if (data.qr && data.state !== 'open') {
-                    // Refresh QR image if a new one arrived
-                    const display = document.getElementById('qr-display-area');
-                    if (display && data.qr) {
-                        const src = data.qr.startsWith('data:') ? data.qr : 'data:image/png;base64,' + data.qr;
-                        const existing = display.querySelector('img');
-                        if (existing) existing.src = src;
-                    }
-                }
-            } catch (e) {
-                console.error('QR poll error:', e);
-            }
-        }, 5000);
-    }
 
     // =========================================================
     // API Keys Management Flow
