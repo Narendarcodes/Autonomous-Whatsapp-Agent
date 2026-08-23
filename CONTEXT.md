@@ -134,3 +134,25 @@ cd backend && ./.venv/Scripts/python.exe -m pytest -q
 - [x] Contacts sync/search served cache-only (Evolution directory gone)
 
 Backend code changes require `docker restart whatsapp_calendar_backend` to go live.
+
+---
+
+## Known Gaps & Future Work
+
+### Inbound rate limiting (not enforced)
+The old per-sender limiter (`check_rate_limit` in `db/redis_client.py`, 20
+msgs/60s via `RATE_LIMIT_REQUESTS`/`RATE_LIMIT_WINDOW_SECONDS`) has no caller
+since the webhook relay was removed; Hermes enforces nothing equivalent.
+Current exposure is low because `dm_policy=allowlist` means only owner-trusted
+senders can trigger the agent at all — revisit before ever setting `open`.
+Caveat: the gateway's single inbound queue is shared across chats, so an
+allowlisted flooder would delay responses for everyone.
+
+**Future fix — "guard hop":** teach the Hermes gateway to consult the backend
+(e.g. `POST /api/guard/check {sender}`) before dispatching a message into a
+session. This would revive rate limiting *and* the stranger-hold cascade in
+one move. Feasibility unknown: need to verify a Hermes platform hook can
+*reject/drop* an inbound message pre-dispatch (the omniwa-group-privacy plugin
+only rewrites prompts/outputs). Alternative rejected for now: a token bucket
+inside `bridge.js` — that file is baked into the image and edits would not
+survive container recreation.
