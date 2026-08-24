@@ -11,7 +11,8 @@ from sqlalchemy import text
 from app.api import contacts, health, oauth, permissions, setup, whatsapp_pairing
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
-from app.db.redis_client import close_redis, ensure_consumer_group, get_redis
+from app.db.redis_client import close_redis, get_redis
+from app.intake.streams import bootstrap_stream
 from app.services.phone_utils import normalize_phone_number
 
 setup_logging()
@@ -22,7 +23,7 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     await get_redis()
-    await ensure_consumer_group()
+    await bootstrap_stream()
 
     # Assert trust_level column in users table
     from app.db.database import AsyncSessionLocal
