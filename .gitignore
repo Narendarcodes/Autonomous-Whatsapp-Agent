@@ -154,3 +154,13 @@ backend/generate_qr_html.py
 backend/test_evolution.py
 backend/test_sync.py
 
+
+# Repo-root scratch artifacts (never commit; files may exist locally)
+/_screen_check.png
+/_top_crop.png
+/wa_full.txt
+/hits.txt
+/new design.zip
+/stitch_*.zip
+*_screen_check.png
+scripts/debug_wa_send_patch*.py
