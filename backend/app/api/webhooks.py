@@ -100,7 +100,17 @@ async def _store_qr(payload: dict[str, Any], cache_key_getter) -> bool:
 
 @router.post("/webhook/qr")
 async def evolution_qr_webhook(request: Request) -> dict[str, str]:
-    """Dedicated QR code update webhook."""
+    """Dedicated QR code update webhook (#2: signature-gated).
+
+    A forged QR could hand the WhatsApp session to an attacker the moment an
+    admin rescans, so these endpoints enforce the same HMAC as the main hook.
+    """
+    raw_body = await request.body()
+    if not verify_openwa_signature(
+        raw_body, request.headers.get("X-Evolution-Signature") or request.headers.get("x-evolution-signature")
+    ):
+        logger.warning("QR webhook signature verification failed")
+        raise HTTPException(status_code=401, detail="Invalid signature")
     try:
         payload = await request.json()
     except Exception:
@@ -111,7 +121,13 @@ async def evolution_qr_webhook(request: Request) -> dict[str, str]:
 
 @router.post("/webhook/agent-qr")
 async def agent_qr_webhook(request: Request) -> dict[str, str]:
-    """Dedicated QR code update webhook for the agent instance."""
+    """Dedicated QR code update webhook for the agent instance (#2: gated)."""
+    raw_body = await request.body()
+    if not verify_openwa_signature(
+        raw_body, request.headers.get("X-Evolution-Signature") or request.headers.get("x-evolution-signature")
+    ):
+        logger.warning("Agent QR webhook signature verification failed")
+        raise HTTPException(status_code=401, detail="Invalid signature")
     try:
         payload = await request.json()
     except Exception:
