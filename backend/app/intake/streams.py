@@ -21,6 +21,7 @@ from dataclasses import dataclass, field, fields as dc_fields
 from app.db.redis_client import get_redis
 from app.intake.base import IdempotencyPort, Inbox, RateLimitPort, SentLogPort, StreamPort
 from app.intake.gates import admit
+from app.intake.policy import PolicyFn
 from app.intake.types import Ack, InboundMessage
 
 logger = logging.getLogger(__name__)
@@ -148,17 +149,25 @@ class StreamsInbox(Inbox):
         rate_limit: RateLimitPort | None = None,
         sent_log: SentLogPort | None = None,
         stream: StreamPort | None = None,
+        session_policy: PolicyFn | None = None,
         rate_limit_requests: int = 20,
         rate_limit_window_seconds: int = 60,
         max_pending_per_chat: int = 5,
     ) -> None:
+        from app.intake.policy import evolution_session_policy
+
         self._idem = idempotency or RedisIdempotency()
         self._rl = rate_limit or RedisRateLimit(rate_limit_requests, rate_limit_window_seconds)
         self._log = sent_log or RedisSentLog()
         self._stream = stream or RedisStream()
+        self._policy = session_policy or evolution_session_policy
         self._max_pending = max_pending_per_chat
 
     async def accept(self, message: InboundMessage) -> Ack:
+        # session-policy pre-gates run before admission (legacy router rules)
+        policy_outcome = await self._policy(message)
+        if policy_outcome is not None:
+            return policy_outcome
         return await admit(
             message,
             idempotency=self._idem,

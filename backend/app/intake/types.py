@@ -49,7 +49,18 @@ class InboundMessage:
         """Legacy dict shape for call sites not yet migrated off subscript access."""
         return asdict(self)
 
-    def dedupe_key(self, instance: str | None = None) -> str:
-        """Idempotency key: instance-scoped provider message id."""
-        scope = instance or self.instance or "default"
-        return f"{scope}:{self.message_id}" if self.message_id else ""
+    def dedupe_key(self) -> str:
+        """Idempotency key: instance-scoped provider message id.
+
+        #11 fallback: events without a provider message id dedupe on a content
+        fingerprint instead of skipping idempotency entirely.
+        """
+        scope = self.instance or "default"
+        if self.message_id:
+            return f"{scope}:{self.message_id}"
+        import hashlib
+
+        fp = hashlib.md5(
+            f"no-id|{self.chat_id}|{self.message_text.strip()}|{self.timestamp}".encode()
+        ).hexdigest()
+        return f"{scope}:no-id:{fp}"

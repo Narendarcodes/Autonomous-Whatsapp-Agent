@@ -120,6 +120,28 @@ async def test_queue_cap_rejects_when_chat_backed_up():
     assert fakes["stream"].total_pending() == 2  # nothing new admitted
 
 
+# ------------------------------------------------------- idempotency (#11)
+
+
+@pytest.mark.asyncio
+async def test_events_without_message_id_still_dedupe_by_content():
+    """#11: legacy path SKIPPED idempotency when the event had no message id.
+    The seam now falls back to a content fingerprint."""
+    inbox, fakes = make_inbox()
+    first = await inbox.accept(msg(message_id="", text="no id here", timestamp="1724500000"))
+    replay = await inbox.accept(msg(message_id="", text="no id here", timestamp="1724500000"))
+    assert (first, replay) == (Ack.ACCEPTED, Ack.DUPLICATE)
+    assert fakes["stream"].total_pending() == 1
+
+
+@pytest.mark.asyncio
+async def test_different_content_without_ids_not_conflated():
+    inbox, _ = make_inbox()
+    a = await inbox.accept(msg(message_id="", text="first", timestamp="t1"))
+    b = await inbox.accept(msg(message_id="", text="second", timestamp="t2"))
+    assert (a, b) == (Ack.ACCEPTED, Ack.ACCEPTED)
+
+
 # ------------------------------------------------------------ independence
 
 
