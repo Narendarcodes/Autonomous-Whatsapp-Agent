@@ -2,7 +2,7 @@
 
 ## Design Decisions In Flight
 
-### Message Intake Module (agreed 2026-08-24, pending implementation)
+### Message Intake Module (implemented 2026-08-24 — ADR-0007)
 The webhook pipeline consolidates behind one deep module (`Inbox`) with interface
 `accept(msg: InboundMessage) -> Ack`. Decisions locked during review:
 
@@ -104,35 +104,26 @@ WhatsApp User → Evolution API (2785)
 ```
 1. Evolution API pushes WhatsApp event to POST /webhook/openwa
    ↓
-2. Verify Webhook Signature: Check X-Evolution-Signature (HMAC-SHA256) header
+2. Verify Webhook Signature: X-Evolution-Signature (HMAC-SHA256)
    ↓
-3. Check Webhook Idempotency: Reject duplicates using event message ID inside Redis (TTL: 24h)
+3. Edge adapter normalizes payload -> trusted InboundMessage (app/intake/evolution.py)
    ↓
-4. Parse Evolution Event: Detect remote JID, text body, and check if it is a self-chat message
+4. Inbox.accept(message) -> Ack          [ADR-0007 seam]
+   ├─ session policy: dual_number / agent-session owner-only -> ignored
+   ├─ idempotency (Redis NX, instance-scoped; content-fingerprint fallback)
+   ├─ fixed-window rate limit (TTL set once per window)
+   ├─ loop guard (sent_message:/sent_text: markers)
+   └─ per-chat cap -> XADD omniwa:inbound  → Ack "queued"
    ↓
-5. Check Loop Prevention: Drop messages that originate from our own Bot API senders
+5. StreamConsumer (omniwa:inbound / agent_workers, sequential per chat):
+   voice STT → DPDP @mention filter → user upsert (race-safe) →
+   monitored-chat + trusted-sender checks → owner approvals / slash commands /
+   setup intercepts → ACL + quiet hours → prompt assembly →
+   dispatch_to_hermes(session=chat JID)
    ↓
-6. Sliding Window Rate Limiting: Assert sender requests do not exceed 20 / min via Redis `rl:{sender}`
-   ↓
-7. Per-Chat Queueing:
-   - Match message to chat_id Queue.
-   - If no Queue exists, launch worker task `_chat_worker(chat_id, queue)`.
-   - Drop messages and send a warning if queue length exceeds 5 (anti-spam buffer).
-   - Put message in Queue and return HTTP 200 {"status": "queued"} immediately.
-   ↓
-8. Queue Worker consumes message:
-   - Transcribe base64 voice recordings (if is_audio) using Groq/Whisper.
-   - DPDP Compliance Check: Drop group messages lacking explicit agent mentions.
-   - Retrieve / create database User entity.
-   - Owner Slash Command Check: Intercept and process commands (e.g. /configure).
-   - Setup Flow Interceptor: Direct owner to complete Calendar linking if missing.
-   - ACL Check: Drop if contact is blocked or logs silently during active Quiet Hours.
-   - Quoted Reply Context Check: Extract contextInfo -> quotedMessage, prefixing the text bubble.
-   - Sequential Dispatch: Call dispatch_to_hermes(sender_phone, finalized_prompt).
-   ↓
-9. dispatch_to_hermes posts message:
-   - Posts to Hermes Agent (8642) passing session-id (phone number) for memory mapping.
-   - Extracts the LLM choices text result and sends it back to the user via WhatsApp.
+6. Hermes replies via its Baileys bridge; failures retry then dead-letter
+   (omniwa:inbound:dead). Restart survival: unconsumed entries are re-claimed
+   from the consumer group PENDING list on boot.
 ```
 
 ---

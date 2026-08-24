@@ -12,7 +12,7 @@ from app.api import contacts, health, oauth, permissions, setup, whatsapp_pairin
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.redis_client import close_redis, get_redis
-from app.intake.streams import bootstrap_stream
+from app.intake.runtime import start_consumer, stop_consumer
 from app.services.phone_utils import normalize_phone_number
 
 setup_logging()
@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting %s v%s", settings.APP_NAME, settings.APP_VERSION)
     await get_redis()
-    await bootstrap_stream()
+    await start_consumer()  # intake consumer: PENDING reclaim on boot (ADR-0007)
 
     # Assert trust_level column in users table
     from app.db.database import AsyncSessionLocal
@@ -152,6 +152,7 @@ async def lifespan(app: FastAPI):
 
     yield
     from app.services import bridge_client
+    await stop_consumer()
     await bridge_client.close()
     await close_redis()
     logger.info("Shutdown complete")
