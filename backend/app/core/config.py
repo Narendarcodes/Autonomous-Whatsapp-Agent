@@ -35,7 +35,12 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = "redispass"
     REDIS_DB: int = 0
 
-    # OpenWA
+    # OpenWA / Evolution API
+    OPENWA_BASE_URL: str = "http://openwa:2785"
+    OPENWA_API_KEY: str = ""
+    OPENWA_SESSION_ID: str = "my-session"
+    OPENWA_WEBHOOK_SECRET: str = ""
+    OPENWA_WEBHOOK_URL: str = "http://backend:8000/webhook/openwa"
     OWNER_WA_PHONE: str = ""
 
     # Contacts ingest (Hermes -> backend server-to-server push). Empty = disabled.

@@ -1,5 +1,37 @@
 # omniWA — Current Architecture (v2.1)
 
+## Design Decisions In Flight
+
+### Message Intake Module (agreed 2026-08-24, pending implementation)
+The webhook pipeline consolidates behind one deep module (`Inbox`) with interface
+`accept(msg: InboundMessage) -> Ack`. Decisions locked during review:
+
+1. **Seam placement** — HMAC signature verification stays at the HTTP edge (router).
+   Evolution payload *parsing/normalization* also lives in the edge adapter; the
+   module only ever sees a trusted, normalized `InboundMessage`.
+2. **Durable queue** — per-chat asyncio queues are replaced by a Redis Streams
+   consumer group behind the seam (resolves issue #6; absorbs the orphaned stream
+   helpers from redis_client.py). Messages survive restarts; multi-worker safe.
+3. **Ack semantics** — `Ack` is an opaque admission enum (accepted · duplicate ·
+   rate_limited · rejected_queue_full · ignored). It describes **admission only**, never
+   delivery. Post-admission gates (DPDP, ACL, quiet hours, commands, dispatch)
+   run asynchronously inside the module and their outcomes appear nowhere in Ack.
+4. Gate order is load-bearing and frozen inside the module:
+   idempotency → rate limit → loop guard → queue cap ‖ (async) DPDP → owner
+   resolution → ACL/quiet hours → command/approval intercepts → dispatch.
+5. **Consumption model** (agreed): one consumer, sequential per chat; consumer-group
+   mechanics retained so chat-hash partitioning stays a config-level change.
+   Constraint until then: single backend replica. Crash-safe PENDING re-claim on boot
+   gives restart survival.
+6. **Private stages** (agreed): `/set` commands, approval short-codes, SETUP/OAUTH
+   intercepts, quoted-reply prefixing and group sender-info prefixing are invisible
+   from the interface. No stage extension point (one adapter = hypothetical seam).
+7. **Test surface** (agreed): new tests hit `inbox.accept()` against in-memory fakes
+   (FakeStream / FakeOutbound / FakeHermes). Rate-limit test rewritten at interface
+   level; dashboard/auth tests survive untouched. Full decision record:
+   [ADR-0007](docs/adr/0007-message-intake-module.md).
+
+
 ## System Status
 
 **Last Updated**: 2026-06-15  

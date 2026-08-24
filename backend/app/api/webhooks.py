@@ -20,6 +20,7 @@ from app.core.logging import get_logger
 from app.core.security import verify_openwa_signature
 from app.db.database import AsyncSessionLocal
 from app.db.redis_client import cache_get, cache_set, check_idempotency, check_rate_limit
+from app.intake.evolution import normalize_event
 from app.models.models import User
 from app.services.whatsapp_service import whatsapp_service, normalize_phone_number
 
@@ -58,41 +59,16 @@ async def _store_qr_from_payload(payload: dict[str, Any]) -> bool:
     return True
 
 
-def _extract_text(message: dict) -> str:
-    """Extract text from Evolution API message."""
-    return (
-        message.get("conversation")
-        or (message.get("extendedTextMessage") or {}).get("text")
-        or (message.get("imageMessage") or {}).get("caption")
-        or ""
-    ).strip()
-
-
 async def _parse_evolution_event(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Parse Evolution API message event into normalized format."""
-    event = _event_name(payload)
-    if event not in ("messages.upsert", "send.message"):
+    """Parse Evolution API message event into normalized format.
+
+    Edge IO (bot identity + mode resolution) happens HERE; wire-shape
+    normalization is delegated to the pure intake adapter (ADR-0007).
+    """
+    if _event_name(payload) not in ("messages.upsert", "send.message"):
         return None
 
-    data = payload.get("data") or {}
-    key = data.get("key") or {}
-
-    remote_jid = key.get("remoteJid") or ""
-    if not remote_jid:
-        return None
-
-    from_me = key.get("fromMe") or False
-    if event == "send.message":
-        from_me = True
-
-    sender_phone_from_jid = (
-        remote_jid
-        .replace("@s.whatsapp.net", "")
-        .replace("@c.us", "")
-        .lstrip("+")
-    )
-    
-    # Try to get bot_phone from cache or query it from Evolution API based on instance
+    # Resolve bot identity per session instance (cache -> service lookup).
     instance = payload.get("instance")
     if instance == "agent-session":
         bot_phone = await cache_get("whatsapp:agent_bot_phone")
@@ -107,81 +83,12 @@ async def _parse_evolution_event(payload: dict[str, Any]) -> dict[str, Any] | No
             bot_phone = await whatsapp_service.get_bot_phone()
             if bot_phone:
                 await cache_set("whatsapp:bot_phone", bot_phone, ttl_seconds=86400)
-    
-    if not bot_phone:
-        bot_phone = (
-            payload.get("sender") or ""
-        ).replace("@s.whatsapp.net", "").replace("@c.us", "").lstrip("+")
 
     from app.services.preferences_service import preferences_service
     bot_mode = await preferences_service.get_owner_preference("bot_mode", settings.BOT_RELATIONSHIP_MODE)
 
-    if bot_mode == "self_chat":
-        is_self_chat = (sender_phone_from_jid == bot_phone)
-    else:
-        is_self_chat = False
-
-    if from_me and not is_self_chat:
-        return None  # Ignore outbound messages to other people
-
-    msg_obj = data.get("message") or {}
-    body = _extract_text(msg_obj)
-    is_audio = "audioMessage" in msg_obj
-
-    if not body and not is_audio:
-        return None
-
-    context_info = None
-    if isinstance(msg_obj, dict):
-        for k, v in msg_obj.items():
-            if isinstance(v, dict) and "contextInfo" in v:
-                context_info = v["contextInfo"]
-                break
-        if not context_info:
-            context_info = msg_obj.get("contextInfo") or {}
-    else:
-        context_info = {}
-
-    quoted_text = ""
-    if context_info:
-        quoted_msg = context_info.get("quotedMessage")
-        if isinstance(quoted_msg, dict):
-            quoted_text = _extract_text(quoted_msg)
-
-    is_group = "@g.us" in remote_jid
-    participant = data.get("participant") or ""
-
-    if is_group:
-        sender_jid = participant or remote_jid
-        chat_id = remote_jid
-    else:
-        sender_jid = remote_jid
-        chat_id = remote_jid
-
-    sender_phone = (
-        sender_jid
-        .replace("@s.whatsapp.net", "")
-        .replace("@c.us", "")
-        .lstrip("+")
-    )
-
-    push_name = data.get("pushName") or ""
-
-    return {
-        "sender_phone": sender_phone,
-        "chat_id": chat_id,
-        "is_group": is_group,
-        "group_id": chat_id if is_group else "",
-        "message_text": body or "[Voice Message]",
-        "message_id": key.get("id", ""),
-        "timestamp": str(data.get("messageTimestamp", "")),
-        "is_audio": is_audio,
-        "push_name": push_name,
-        "quoted_text": quoted_text,
-        "bot_phone": bot_phone,
-        "instance": instance,
-        "bot_mode": bot_mode,
-    }
+    normalized = normalize_event(payload, bot_phone=bot_phone, bot_mode=bot_mode)
+    return normalized.as_dict() if normalized else None
 
 
 async def _get_or_create_user(db: AsyncSession, wa_phone: str, display_name: str | None = None) -> User:
