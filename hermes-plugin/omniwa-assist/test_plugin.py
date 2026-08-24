@@ -87,6 +87,16 @@ def test_nonowner_dm_is_gated_like_groups(hooks, ingests):
     assert result["action"] == "rewrite"
 
 
+def test_lid_form_selfchat_dm_passes(hooks, ingests):
+    """Regression: self-chat arrives as LID (13349261734098@lid), which can
+    never digit-match an OWNER_WA_PHONE. The chat-id-vs-botIds proof must
+    catch it or the owner's own command channel gets skipped as noise."""
+    ev = _event(chat_type="dm", text="ping", phone="916300354385")
+    ev.source.chat_id = "13349261734098@lid"
+    ev.raw_message["botIds"] = ["13349261734098@lid"]
+    assert hooks["pre_gateway_dispatch"](event=ev) is None
+
+
 def test_dm_ingested_for_directory(hooks, ingests):
     hooks["pre_gateway_dispatch"](event=_event(chat_type="dm", text="hi there"))
     assert ingests == [("919999999999", "919999999999", "Tester")]

@@ -102,18 +102,30 @@ def _digits(value) -> str:
     return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
-def _is_owner(source) -> bool:
-    """True when the DM sender is the owner's own number (command channel).
+def _digits(value) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
 
-    The owner's self-chat must NEVER be keyword-gated — it is the always-on
-    control surface where full agent attention is expected.
+
+def _owner_numbers() -> set:
+    return {_digits(o) for o in _env("OWNER_WA_PHONE").split(",") if o.strip()}
+
+
+def _is_owner_channel(source, raw_message) -> bool:
+    """True when this DM is an owner command channel.
+
+    Two accepted proofs:
+    1. SELF-CHAT: the chat id itself matches one of the paired account's
+       own identities (raw_message.botIds carries sock.user.id + lid).
+       LID-proof by construction - no phone matching required.
+    2. EXPLICIT: sender number listed in comma-separated OWNER_WA_PHONE.
     """
+    raw = raw_message if isinstance(raw_message, dict) else {}
+    bots = {_digits(b) for b in (raw.get("botIds") or [])}
+    chat_d = _digits(getattr(source, "chat_id", ""))
+    if chat_d and bots and chat_d in bots:
+        return True
     sender = _digits(getattr(source, "user_id", ""))
-    if not sender:
-        return False
-    owners = {_digits(o) for o in _env("OWNER_WA_PHONE").split(",") if o.strip()}
-    return sender in owners
-
+    return bool(sender) and sender in _owner_numbers()
 
 def _mentions_bot(event) -> bool:
     """True when the message tags the bot or replies to a bot message."""
@@ -149,7 +161,7 @@ def register(ctx):
             _spawn_ingest(source, event)
 
         # 2) owner's self-chat DM = always-on command channel, never gated
-        if not is_group and _is_owner(source):
+        if not is_group and _is_owner_channel(source, getattr(event, "raw_message", None)):
             return None
 
         # 3) explicit mentions keep the direct-command UX untouched
