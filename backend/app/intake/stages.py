@@ -27,9 +27,13 @@ from app.models.models import User
 
 logger = logging.getLogger(__name__)
 
-ReplyFn = Callable[[InboundMessage, str, str], Awaitable[None]]
-DispatchFn = Callable[[str, str, bool], Awaitable[None]]
+ReplyFn = Callable[[InboundMessage, str, str], Awaitable[bool]]
+DispatchFn = Callable[[str, str, bool], Awaitable[bool]]
 TranscribeFn = Callable[[str], Awaitable[str | None]]
+
+FALLBACK_REPLY = (
+    "⚠️ I'm temporarily unavailable right now — please try again in a minute."
+)
 
 
 # ------------------------------------------------------------------ user
@@ -114,21 +118,18 @@ class MessagePipeline:
         return await audio_service.transcribe_audio(base64_audio)
 
     @staticmethod
-    async def _default_dispatch(session_id: str, final_text: str, use_agent: bool) -> None:
+    async def _default_dispatch(session_id: str, final_text: str, use_agent: bool) -> bool:
         from app.services.agent_harness import dispatch_to_hermes
 
-        await dispatch_to_hermes(session_id, final_text, system_prompt=None, use_agent=use_agent)
+        data = await dispatch_to_hermes(session_id, final_text, system_prompt=None, use_agent=use_agent)
+        return data is not None
 
     @staticmethod
-    async def _default_reply(message: InboundMessage, to: str, text: str) -> None:
-        if message.instance == "agent-session":
-            from app.services.agent_instance_service import agent_instance_service
+    async def _default_reply(message: InboundMessage, to: str, text: str) -> bool:
+        from app.outbound import get_outbound
 
-            await agent_instance_service.send_via_agent(to, text)
-        else:
-            from app.services.whatsapp_service import whatsapp_service
-
-            await whatsapp_service.send_text(to, text)
+        result = await get_outbound().send(to, text, session_hint=message.instance)
+        return bool(result)
 
     # -- the chain --------------------------------------------------------
 
@@ -256,10 +257,13 @@ class MessagePipeline:
             )
             final_text = f"[{sender_info}]: {final_text}"
 
-        # 11. dispatch
+        # 11. dispatch — with user-visible failure path (#8)
         use_agent = message.instance == "agent-session"
         logger.info("Dispatching %s to Hermes (session=%s)", message.message_id, message.chat_id)
-        await self._dispatch(message.chat_id, final_text, use_agent)
+        delivered_to_brain = await self._dispatch(message.chat_id, final_text, use_agent)
+        if not delivered_to_brain:
+            logger.warning("Hermes dispatch failed for %s — sending fallback reply", message.message_id)
+            await self._reply(message, message.chat_id, FALLBACK_REPLY)
 
 
 def content_fallback_key(chat_id: str, message_text: str, timestamp: str) -> str:

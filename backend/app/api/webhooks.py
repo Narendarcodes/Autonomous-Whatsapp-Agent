@@ -222,14 +222,9 @@ def _maybe_alert_owner(message: InboundMessage, ack: Ack) -> None:
                     "⚠️ *System Alert*: You are sending too many messages. "
                     "Some messages may be skipped to prevent overload."
                 )
-            if message.instance == "agent-session":
-                from app.services.agent_instance_service import agent_instance_service
+            from app.outbound import get_outbound
 
-                await agent_instance_service.send_via_agent(message.sender_phone, text)
-            else:
-                from app.services.whatsapp_service import whatsapp_service
-
-                await whatsapp_service.send_text(message.sender_phone, text)
+            await get_outbound().send(message.sender_phone, text, session_hint=message.instance)
         except Exception as exc:  # noqa: BLE001 - alerting must never throw
             logger.warning("Owner alert failed: %s", exc)
 

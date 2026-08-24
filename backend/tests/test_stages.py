@@ -49,16 +49,19 @@ def msg(
 
 
 class Recorder:
-    def __init__(self):
+    def __init__(self, dispatch_ok=True):
+        self.dispatch_ok = dispatch_ok
         self.dispatched: list[tuple[str, str, bool]] = []
         self.replies: list[tuple[str, str]] = []
         self.transcribed_from: list[str] = []
 
     async def dispatch(self, session_id, final_text, use_agent):
         self.dispatched.append((session_id, final_text, use_agent))
+        return self.dispatch_ok
 
     async def reply(self, message, to, text):
         self.replies.append((to, text))
+        return True
 
     async def transcribe(self, message_id):
         self.transcribed_from.append(message_id)
@@ -168,6 +171,33 @@ async def test_voice_message_transcribed_then_dispatched(db_session):
 
     assert rec.transcribed_from == ["AUD-9"]
     assert rec.dispatched[0][1] == "transcribed words"
+
+
+# ------------------------------------------------- brain failure (#8)
+
+
+async def test_hermes_failure_sends_fallback_reply(db_session):
+    rec = Recorder(dispatch_ok=False)
+    pipeline = MessagePipeline(transcribe=rec.transcribe, dispatch=rec.dispatch, reply=rec.reply)
+    owner = phone()
+    await make_owner(db_session, owner)
+
+    m = msg(sender=owner, chat=owner, text="hello")
+    await pipeline(m)
+
+    assert len(rec.dispatched) == 1                      # dispatch was attempted
+    assert len(rec.replies) == 1                         # fallback reached the sender
+    assert "temporarily unavailable" in rec.replies[0][1]
+
+
+async def test_hermes_success_sends_no_fallback(db_session):
+    rec = Recorder(dispatch_ok=True)
+    pipeline = MessagePipeline(transcribe=rec.transcribe, dispatch=rec.dispatch, reply=rec.reply)
+    owner = phone()
+    await make_owner(db_session, owner)
+
+    await pipeline(msg(sender=owner, chat=owner, text="hi"))
+    assert rec.replies == []
 
 
 async def test_upsert_race_creates_exactly_one_row(db_session):

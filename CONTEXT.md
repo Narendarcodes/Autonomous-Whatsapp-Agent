@@ -2,6 +2,19 @@
 
 ## Design Decisions In Flight
 
+### Outbound WhatsApp Seam (implemented 2026-08-24 — review candidate 2)
+One port: `WhatsAppOutbound.send(chat_id, text, session_hint=None) -> DeliveryResult`.
+
+1. **Selection rules consolidated** in OutboundRouter: inbound hint `agent-session`
+   → agent adapter; owner `bot_mode == dual_number` → agent adapter; otherwise primary.
+2. **Failures are values** — the seam never raises; adapters contain their errors.
+3. **Hermes bridge stays a direct dependency** for policy-chosen system
+   notifications (permission/setup notices) — those target the bridge regardless
+   of session by design.
+4. **Brain-failure fallback (#8)**: MessagePipeline sends FALLBACK_REPLY when
+   dispatch_to_hermes returns None after one retry; ACL/quiet-hour-dropped
+   chats never reach dispatch, so fallback cannot spam them.
+
 ### Message Intake Module (implemented 2026-08-24 — ADR-0007)
 The webhook pipeline consolidates behind one deep module (`Inbox`) with interface
 `accept(msg: InboundMessage) -> Ack`. Decisions locked during review:
