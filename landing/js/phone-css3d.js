@@ -1,41 +1,27 @@
-// phone-css3d.js — photoreal CSS 3D iPhone (ported from Styly IO's MIT-licensed
-// IPhoneMockup) + live WhatsApp chat screen driven by scroll.
-// Vanilla JS port: same geometry (360x800, 52px frame radius), same materials
-// (titanium gradient body, metallic edge highlight, dynamic island w/ camera
-// dot, side buttons, glass reflection), plus GSAP-scrubbed chat.
+// phone-css3d.js — pro-rendered phone frame (PNG asset from the facilpay
+// clone, same technique as whatsapp.com / facilpay.io: image frame + live
+// HTML screen) with GSAP-scrubbed WhatsApp chat.
 
-export function createIPhone(container, opts = {}) {
-  const scale = opts.scale ?? 0.82;
+export function createPhone(container, opts = {}) {
+  const scale = opts.scale ?? 0.8;
 
-  container.classList.add("iphone-scene");
+  container.classList.add("ph-scene");
   container.innerHTML = `
-    <div class="ip-wrapper" style="width:${360 * scale}px;height:${800 * scale}px">
-      <div class="ip-device">
-        <div class="ip-frame">
-          <div class="ip-edge"></div>
-          <div class="ip-bezel">
-            <div class="ip-screen-shell">
-              <div class="ip-island"><span class="ip-cam"></span></div>
-              <div class="ip-screen">
-                <div class="chat-ui" id="${opts.screenId || "ip-chat"}"></div>
-                <div class="ip-glass"></div>
-              </div>
-            </div>
-          </div>
-          <span class="ip-btn ip-btn--vol1"></span>
-          <span class="ip-btn ip-btn--vol2"></span>
-          <span class="ip-btn ip-btn--action"></span>
-          <span class="ip-btn ip-btn--power"></span>
+    <div class="ph-wrapper" style="width:${Math.round(340 * scale)}px">
+      <div class="ph-device">
+        <img class="ph-img" src="assets/phone-frame.png" alt="" draggable="false" />
+        <div class="ph-screen">
+          <div class="chat-ui"></div>
+          <div class="ph-glass"></div>
         </div>
-        <div class="ip-shadow"></div>
       </div>
     </div>`;
 
-  const device = container.querySelector(".ip-device");
+  const device = container.querySelector(".ph-device");
   const chatUI = container.querySelector(".chat-ui");
 
-  /* ---------- rotation state ---------- */
-  const LIMITS = { minX: -8, maxX: 12, minY: -25, maxY: 15 };
+  /* ---------- drag rotation (Apple fluid: 1:1, clamped, eases home) ---------- */
+  const LIMITS = { minX: -7, maxX: 11, minY: -22, maxY: 14 };
   const BASE = { x: 2, y: -12 };
   let rot = { ...BASE };
   let dragging = false;
@@ -44,7 +30,7 @@ export function createIPhone(container, opts = {}) {
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const interactive = opts.interactive !== false && !reduced;
 
-  const clamp = () => {
+  const clampRot = () => {
     rot.x = Math.max(LIMITS.minX, Math.min(LIMITS.maxX, rot.x));
     rot.y = Math.max(LIMITS.minY, Math.min(LIMITS.maxY, rot.y));
   };
@@ -58,9 +44,10 @@ export function createIPhone(container, opts = {}) {
     });
     container.addEventListener("pointermove", (e) => {
       if (!dragging) return;
-      rot.y = dragStart.ry + (e.clientX - dragStart.x) * 0.3;
-      rot.x = dragStart.rx - (e.clientY - dragStart.y) * 0.15;
-      clamp();
+      // 1:1 tracking — screen glued to pointer
+      rot.y = dragStart.ry + (e.clientX - dragStart.x) * 0.28;
+      rot.x = dragStart.rx - (e.clientY - dragStart.y) * 0.14;
+      clampRot();
     });
     const end = () => (dragging = false);
     container.addEventListener("pointerup", end);
@@ -70,19 +57,17 @@ export function createIPhone(container, opts = {}) {
   function tick() {
     requestAnimationFrame(tick);
     if (reduced) return;
-    phase += 0.022;
+    phase += 0.02; // idle sway
     if (!dragging) {
-      // ease back toward base while auto-swaying
-      rot.x += (BASE.x - rot.x) * 0.05;
+      rot.x += (BASE.x - rot.x) * 0.05; // ease home
       rot.y += (BASE.y - rot.y) * 0.05;
     }
-    const swayY = dragging ? 0 : Math.sin(phase) * 9;
-    device.style.transform =
-      `rotateY(${rot.y + swayY}deg) rotateX(${rot.x}deg)`;
+    const swayY = dragging ? 0 : Math.sin(phase) * 7;
+    device.style.transform = `rotateY(${rot.y + swayY}deg) rotateX(${rot.x}deg)`;
   }
   tick();
 
-  /* ---------- WhatsApp chat on the screen ---------- */
+  /* ---------- WhatsApp chat ---------- */
   const SCRIPT = [
     { t: "Hi! Are you open for a consult call this Friday?", out: false },
     { t: "Unknown sender held for review", sys: true },
@@ -92,8 +77,11 @@ export function createIPhone(container, opts = {}) {
     { t: "Perfect, see you then! 🙌", out: false },
   ];
 
+  let lastState = -1;
   function renderChat(state) {
     const n = Math.round(Math.min(state, SCRIPT.length));
+    if (n === lastState) return; // only redraw on step change
+    lastState = n;
     let html = `
       <div class="wa-header">
         <span class="wa-avatar">A</span>
@@ -107,7 +95,7 @@ export function createIPhone(container, opts = {}) {
       if (m.sys) {
         html += `<div class="wa-sys${m.ok ? " wa-sys--ok" : ""}">${m.ok ? "✓ " : ""}${m.t}</div>`;
       } else {
-        const time = m.out ? "10:22 <b class='ticks'>✓✓</b>" : "10:21";
+        const time = m.out ? '10:22 <b class="ticks">✓✓</b>' : "10:21";
         html += `<div class="wa-bubble ${m.out ? "wa-bubble--out" : "wa-bubble--in"}">${m.t}<span class="wa-time">${time}</span></div>`;
       }
     }
@@ -123,6 +111,5 @@ export function createIPhone(container, opts = {}) {
     setChatProgress(p) {
       renderChat(p);
     },
-    el: device,
   };
 }

@@ -1,171 +1,61 @@
 /* ============================================================
-   CSS 3D iPhone — ported from Styly IO's MIT IPhoneMockup
-   Geometry: 360x800, 52px frame radius, 12px frame padding.
-   Materials: titanium gradient + metallic edge highlight +
-   dynamic island w/ camera dot + side buttons + glass reflection.
+   Phone — pro-rendered frame PNG (from facilpay clone asset)
+   + live WhatsApp chat layered into the glass area.
+   Technique matches the reference: image frame, HTML screen.
    ============================================================ */
 
-.iphone-scene {
-  perspective: 1200px;
+.ph-scene {
+  perspective: 1400px;
   perspective-origin: 50% 50%;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.ip-wrapper {
+.ph-wrapper {
   position: relative;
   margin-inline: auto;
 }
 
-.ip-device {
-  position: absolute;
-  inset: 0;
+.ph-device {
+  position: relative;
   transform-style: preserve-3d;
   transform: rotateY(-12deg) rotateX(2deg);
   will-change: transform;
-  transition: none;
 }
 
-/* ---- outer titanium frame ---- */
-.ip-frame {
-  position: relative;
+/* the pro-rendered titanium frame */
+.ph-img {
+  display: block;
   width: 100%;
-  height: 100%;
-  border-radius: 52px;
-  padding: 12px;
-  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #1a1a1a 100%);
-  box-shadow:
-    0 60px 120px -20px rgba(0, 0, 0, 0.6),
-    0 30px 60px -30px rgba(0, 0, 0, 0.5);
-  transform-style: preserve-3d;
+  height: auto;
+  filter: drop-shadow(0 50px 80px rgba(28, 30, 33, 0.35));
 }
 
-/* metallic edge highlight — left side catches the light */
-.ip-edge {
+/* live screen layer — positioned over the PNG's glass area */
+.ph-screen {
   position: absolute;
-  inset: 0;
-  border-radius: 52px;
-  pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    rgba(255, 255, 255, 0.25) 0%,
-    rgba(255, 255, 255, 0.05) 20%,
-    transparent 40%,
-    transparent 60%,
-    rgba(0, 0, 0, 0.2) 100%
-  );
-}
-
-/* ---- inner bezel ---- */
-.ip-bezel {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 42px;
-  padding: 3px;
-  background: linear-gradient(135deg, #252525 0%, #1f1f1f 100%);
-  transform-style: preserve-3d;
-}
-
-/* ---- screen shell ---- */
-.ip-screen-shell {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  border-radius: 40px;
+  /* glass rect measured from the frame PNG (1520x3096):
+     x 60–1460, y 45–3055 → insets in % */
+  left: 3.9%;
+  right: 4%;
+  top: 1.8%;
+  bottom: 1.6%;
   overflow: hidden;
-  background: #0a0a0a;
-  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
-  transform-style: preserve-3d;
-}
-
-/* dynamic island */
-.ip-island {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120px;
-  height: 34px;
-  background: #000;
-  border-radius: 9999px;
-  z-index: 20;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-}
-.ip-cam {
-  position: absolute;
-  right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #1e3a5f, #0a0a12 70%);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-.ip-cam::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 40%, #2c5f8f, #0d1f2d 80%);
-}
-
-/* ---- actual screen ---- */
-.ip-screen {
-  position: absolute;
-  inset: 0;
-  border-radius: 38px;
-  overflow: hidden;
+  transform: translateZ(1px); /* sits above the frame face */
   background: #ece5dd;
-  transform: translateZ(4px);
-  backface-visibility: hidden;
 }
 
-/* glass reflection over everything */
-.ip-glass {
+/* glass reflection sweep */
+.ph-glass {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: 5;
   pointer-events: none;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0%, transparent 42%);
-}
-
-/* ---- side buttons ---- */
-.ip-btn {
-  position: absolute;
-  width: 4px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #2a2a2a, #1a1a1a);
-  box-shadow: -1px 0 2px rgba(0, 0, 0, 0.3);
-}
-.ip-btn--vol1 { left: -3px; top: 17%; height: 30px; }
-.ip-btn--vol2 { left: -3px; top: 22.5%; height: 55px; }
-.ip-btn--action { left: -3px; top: 31%; height: 55px; }
-.ip-btn--power {
-  right: -3px;
-  top: 24%;
-  height: 80px;
-  background: linear-gradient(270deg, #2a2a2a, #1a1a1a);
-  box-shadow: 1px 0 2px rgba(0, 0, 0, 0.3);
-}
-
-/* ---- depth shadow behind device ---- */
-.ip-shadow {
-  position: absolute;
-  inset: 0;
-  border-radius: 52px;
-  z-index: -1;
-  transform: translateZ(-10px) translateX(5px) translateY(3px);
-  background: rgba(0, 0, 0, 0.15);
-  filter: blur(15px);
+  background: linear-gradient(128deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.02) 26%, transparent 46%);
 }
 
 /* ============================================================
-   WhatsApp chat UI on the screen (light mode, authentic)
+   WhatsApp chat UI (light mode, authentic)
    ============================================================ */
 .chat-ui {
   display: flex;
@@ -182,7 +72,7 @@
   gap: 10px;
   background: #075e54;
   color: #fff;
-  padding: 46px 14px 10px; /* room for the island */
+  padding: 44px 14px 10px; /* clears the notch zone */
 }
 .wa-avatar {
   width: 32px;
@@ -320,12 +210,11 @@
   width: 14px;
   height: 14px;
   background: #fff;
-  clip-path: polygon(0 45%, 100 0%, 55% 100%, 45% 55%);
   clip-path: polygon(0% 50%, 100% 0%, 60% 100%, 45% 60%);
 }
 
-/* reduced motion: no sway, no pop */
+/* reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  .ip-device { transform: rotateY(-12deg) rotateX(2deg) !important; }
+  .ph-device { transform: rotateY(-12deg) rotateX(2deg) !important; }
   .wa-bubble, .wa-sys, .wa-typing { animation: none; }
 }
