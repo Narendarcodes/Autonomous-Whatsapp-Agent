@@ -52,6 +52,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code
 COPY ./app /app/app
+COPY ./alembic.ini /app/alembic.ini
+COPY ./alembic /app/alembic
 
 # Create necessary directories
 RUN mkdir -p /app/tokens /app/logs
