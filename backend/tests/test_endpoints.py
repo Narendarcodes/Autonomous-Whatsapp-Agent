@@ -75,22 +75,27 @@ async def test_access_control_permissions(db_session):
 
 @pytest.mark.asyncio
 async def test_rate_limiting():
-    """Test Redis-backed message request rate limiter."""
-    from app.db.redis_client import check_rate_limit
-    sender = "test_sender_123"
-    
-    # Clean redis state for test sender
+    """#5: seam limiter — fixed window whose TTL is set ONCE (first hit), so
+    steady traffic can no longer extend its own window forever."""
+    import uuid
+
+    from app.intake.streams import RedisRateLimit
+
+    sender = f"test_sender_{uuid.uuid4().hex[:8]}"
+    limiter = RedisRateLimit(limit=3, window_seconds=60)
+
+    assert await limiter.allow(sender) is True
+    assert await limiter.allow(sender) is True
+    assert await limiter.allow(sender) is True
+    assert await limiter.allow(sender) is False  # over budget
+
+    # window key exists with a TTL and it was set at first hit, not extended
     r = await get_redis()
-    await r.delete(f"rl:{sender}")
-    
-    # Request up to the limit
-    for _ in range(settings.RATE_LIMIT_REQUESTS):
-        allowed = await check_rate_limit(sender)
-        assert allowed is True
-        
-    # Next request must be rate-limited
-    blocked = await check_rate_limit(sender)
-    assert blocked is False
+    ttl_first = await r.ttl(f"inbox:rl:{sender}")
+    await limiter.allow(sender)
+    ttl_second = await r.ttl(f"inbox:rl:{sender}")
+    assert 0 < ttl_second <= 60
+    assert abs(ttl_first - ttl_second) < 5  # not reset to full window by later hits
 
 @pytest.mark.asyncio
 async def test_unauthenticated_api_redirect():

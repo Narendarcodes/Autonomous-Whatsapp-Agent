@@ -43,15 +43,6 @@ async def close_redis() -> None:
             _redis = None
 
 
-async def check_idempotency(key: str, ttl_seconds: int = 86400) -> bool:
-    """Returns True if this is a NEW request (set the key), False if duplicate."""
-    if not key:
-        return True
-    r = await get_redis()
-    was_set = await r.set(f"idem:{key}", "1", ex=ttl_seconds, nx=True)
-    return bool(was_set)
-
-
 async def cache_get(key: str) -> str | None:
     r = await get_redis()
     return await r.get(key)
@@ -60,14 +51,3 @@ async def cache_get(key: str) -> str | None:
 async def cache_set(key: str, value: str, ttl_seconds: int = 3600) -> None:
     r = await get_redis()
     await r.set(key, value, ex=ttl_seconds)
-
-
-async def check_rate_limit(sender: str) -> bool:
-    """Returns True if request is allowed, False if rate-limited."""
-    r = await get_redis()
-    key = f"rl:{sender}"
-    pipe = r.pipeline()
-    pipe.incr(key)
-    pipe.expire(key, settings.RATE_LIMIT_WINDOW_SECONDS)
-    result = await pipe.execute()
-    return int(result[0]) <= settings.RATE_LIMIT_REQUESTS
