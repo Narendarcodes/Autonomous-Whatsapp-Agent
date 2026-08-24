@@ -15,9 +15,14 @@ pydantic-settings>=2.5.2
 pydantic[email]>=2.7.0
 
 # ==================== DATABASE ====================
+# Driver policy: asyncpg = async runtime driver; psycopg2 = Alembic migrations
+# (sync engine in alembic/env.py). Both are required by design.
 sqlalchemy==2.0.28
 asyncpg==0.29.0
 psycopg2-binary==2.9.9
+
+# Migrations (#9) — schema changes NEVER run from app startup again
+alembic>=1.13.0
 
 # Redis
 redis==5.0.3

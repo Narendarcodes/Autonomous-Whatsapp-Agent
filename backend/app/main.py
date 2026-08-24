@@ -1,19 +1,16 @@
 """FastAPI application entry point."""
-import asyncio
 from contextlib import asynccontextmanager
 
 import os
 from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from sqlalchemy import text
 
 from app.api import contacts, health, oauth, permissions, setup, webhooks, whatsapp_pairing
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.redis_client import close_redis, get_redis
 from app.intake.runtime import start_consumer, stop_consumer
-from app.services.phone_utils import normalize_phone_number
 
 setup_logging()
 logger = get_logger(__name__)
@@ -25,130 +22,41 @@ async def lifespan(app: FastAPI):
     await get_redis()
     await start_consumer()  # intake consumer: PENDING reclaim on boot (ADR-0007)
 
-    # Assert trust_level column in users table
+    # Schema is owned by Alembic (`alembic upgrade head`) — never DDL here (#9).
     from app.db.database import AsyncSessionLocal
-    
+
+    # Rebuild LiteLLM configuration to propagate active DB keys
     async with AsyncSessionLocal() as db:
         try:
-            await db.execute(text("ALTER TABLE users ADD COLUMN trust_level VARCHAR(16) DEFAULT 'trusted'"))
-            await db.commit()
-            logger.info("Database migration check: trust_level column added")
-        except Exception as e:
-            await db.rollback()
-            logger.debug("Column trust_level assertion status (might already exist): %s", e)
+            from app.services.litellm_service import rebuild_litellm_config
+            await rebuild_litellm_config(db)
+            logger.info("LiteLLM configuration rebuilt successfully on startup")
+        except Exception as config_err:
+            logger.error("Failed to rebuild LiteLLM config on startup: %s", config_err)
 
-        try:
-            await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS api_keys (
-                    id UUID PRIMARY KEY,
-                    name VARCHAR(128) NOT NULL,
-                    provider VARCHAR(64) NOT NULL,
-                    api_key_enc TEXT NOT NULL,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMPTZ DEFAULT NOW(),
-                    updated_at TIMESTAMPTZ DEFAULT NOW()
-                )
-            """))
-            await db.execute(text("""
-                CREATE TABLE IF NOT EXISTS observed_contacts (
-                    id UUID PRIMARY KEY,
-                    tenant_id INTEGER NOT NULL REFERENCES tenants(id),
-                    wa_phone VARCHAR(32) NOT NULL,
-                    lid VARCHAR(64),
-                    display_name VARCHAR(128),
-                    source_chats JSON DEFAULT '[]',
-                    first_seen_at TIMESTAMPTZ DEFAULT NOW(),
-                    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
-                    CONSTRAINT uq_observed_tenant_phone UNIQUE (tenant_id, wa_phone)
-                )
-            """))
-            await db.execute(text("CREATE INDEX IF NOT EXISTS ix_observed_contacts_wa_phone ON observed_contacts (wa_phone)"))
-            await db.execute(text("CREATE INDEX IF NOT EXISTS ix_observed_contacts_tenant_id ON observed_contacts (tenant_id)"))
-            await db.commit()
-            logger.info("Database migration check: api_keys/observed_contacts tables verified")
-            
-            # Rebuild LiteLLM configuration on startup to propagate active DB keys
-            try:
-                from app.services.litellm_service import rebuild_litellm_config
-                await rebuild_litellm_config(db)
-                logger.info("LiteLLM configuration rebuilt successfully on startup")
-            except Exception as config_err:
-                logger.error("Failed to rebuild LiteLLM config on startup: %s", config_err)
-        except Exception as e:
-            await db.rollback()
-            logger.error("Failed to assert api_keys table on startup: %s", e)
+    # Non-destructive owner synchronisation (candidate 5 / #9)
+    from app.services.bootstrap_service import ensure_owner_record
 
-
-    # Assert owner synchronization with settings.OWNER_WA_PHONE or connected bot phone
     async with AsyncSessionLocal() as db:
         try:
+            owner_phone = await ensure_owner_record(db)
+            logger.info("Bootstrap: owner records synchronised (%s)", owner_phone)
+
+            # Sync Google OAuth credentials to Hermes on startup
             from app.models.models import User
-            from sqlalchemy import select, update
-            
-            # Find current owner in DB first
-            owner_res = await db.execute(
-                select(User).where(User.is_owner == True)
-            )
-            current_owner = owner_res.scalar_one_or_none()
+            from sqlalchemy import select
+            from app.services.oauth_service import load_user_credentials, sync_credentials_to_hermes
 
-            if current_owner and current_owner.wa_phone:
-                owner_phone = current_owner.wa_phone
-                settings.OWNER_WA_PHONE = owner_phone
-                logger.info("Lifespan startup: Using DB owner phone: %s", owner_phone)
-            else:
-                owner_phone = normalize_phone_number(settings.OWNER_WA_PHONE) or settings.OWNER_WA_PHONE.lstrip("+")
-                settings.OWNER_WA_PHONE = owner_phone
-                logger.info("Lifespan startup: Fallback owner phone from settings: %s", owner_phone)
-
-            if owner_phone:
-                # Check duplicate user to prevent unique constraints error
-                dup_res = await db.execute(
-                    select(User).where(User.wa_phone == owner_phone)
-                )
-                dup_user = dup_res.scalar_one_or_none()
-                
-                if current_owner:
-                    if current_owner.wa_phone != owner_phone:
-                        if dup_user and dup_user.id != current_owner.id:
-                            await db.delete(dup_user)
-                            await db.flush()
-                        current_owner.wa_phone = owner_phone
-                        current_owner.has_permission = True
-                        logger.info("Synchronized owner phone change to %s on startup", owner_phone)
-                else:
-                    if dup_user:
-                        dup_user.is_owner = True
-                        dup_user.has_permission = True
-                        logger.info("Synchronized owner status for existing user %s", owner_phone)
-                    else:
-                        new_owner = User(
-                            wa_phone=owner_phone,
-                            is_owner=True,
-                            has_permission=True,
-                            display_name="You (Owner)"
-                        )
-                        db.add(new_owner)
-                        logger.info("Created owner user %s on startup", owner_phone)
-                
-                # 2. Update all other users to is_owner = False
-                await db.execute(
-                    update(User).where(User.wa_phone != owner_phone).values(is_owner=False)
-                )
-                await db.commit()
-                logger.info("Owner records synchronized successfully.")
-
-                # Sync Google OAuth credentials to Hermes on startup
-                from app.services.oauth_service import load_user_credentials, sync_credentials_to_hermes
-                result = await db.execute(select(User).where(User.is_owner == True))
-                owner_user = result.scalar_one_or_none()
-                if owner_user and owner_user.google_access_token_enc:
-                    creds = await load_user_credentials(owner_user, db)
-                    if creds:
-                        sync_credentials_to_hermes(creds)
-                        logger.info("Startup: Synced Google OAuth credentials to Hermes container.")
+            result = await db.execute(select(User).where(User.is_owner == True))  # noqa: E712
+            owner_user = result.scalar_one_or_none()
+            if owner_user and owner_user.google_access_token_enc:
+                creds = await load_user_credentials(owner_user, db)
+                if creds:
+                    sync_credentials_to_hermes(creds)
+                    logger.info("Startup: Synced Google OAuth credentials to Hermes container.")
         except Exception as e:
             await db.rollback()
-            logger.error("Failed to synchronize owner records on startup: %s", e)
+            logger.error("Failed to synchronise owner records on startup: %s", e)
 
     yield
     from app.services import bridge_client
