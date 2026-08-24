@@ -183,11 +183,12 @@ def register(ctx):
         if _mentions_bot(event):
             return None
 
-        # 4) keyword gate — noise never reaches the LLM (groups + non-owner DMs)
+        # 4) keyword hits get SUGGESTION MODE (offer, don't execute).
+        #    Everything else dispatches normally — no silent skipping.
         text = getattr(event, "text", "") or ""
         hit = _keyword_hit(text)
         if hit is None:
-            return {"action": "skip", "reason": "assist_no_keyword"}
+            return None
 
         directive = SUGGEST_DIRECTIVE + f"[TRIGGER KEYWORD: {hit}]\n\n"
         return {"action": "rewrite", "text": directive + text}

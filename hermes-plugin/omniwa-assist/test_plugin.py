@@ -78,9 +78,9 @@ def test_owner_selfchat_dm_always_passes(hooks, ingests):
 
 
 def test_nonowner_dm_is_gated_like_groups(hooks, ingests):
-    # noise -> skip
+    # non-keyword chatter dispatches normally now (silence feature removed)
     ev = _event(chat_type="dm", text="lol ok cool", phone="919999999999")
-    assert hooks["pre_gateway_dispatch"](event=ev) == {"action": "skip", "reason": "assist_no_keyword"}
+    assert hooks["pre_gateway_dispatch"](event=ev) is None
     # keyword -> suggestion rewrite
     ev2 = _event(chat_type="dm", text="can you book a table", phone="919999999999")
     result = hooks["pre_gateway_dispatch"](event=ev2)
@@ -125,10 +125,10 @@ def test_keyword_hit_rewrites_into_suggestion_mode(hooks, ingests):
     assert "someone should book a table for Friday" in result["text"]
 
 
-def test_noise_is_skipped(hooks, ingests):
+def test_noise_gets_normal_dispatch(hooks, ingests):
+    """Silence removed: non-keyword group chatter flows to the agent normally."""
     ev = _event(text="lol ok cool")
-    result = hooks["pre_gateway_dispatch"](event=ev)
-    assert result == {"action": "skip", "reason": "assist_no_keyword"}
+    assert hooks["pre_gateway_dispatch"](event=ev) is None
 
 
 # --- ingest ---
