@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import text
 
-from app.api import contacts, health, oauth, permissions, setup, whatsapp_pairing
+from app.api import contacts, health, oauth, permissions, setup, webhooks, whatsapp_pairing
 from app.core.config import settings
 from app.core.logging import get_logger, setup_logging
 from app.db.redis_client import close_redis, get_redis
@@ -194,6 +194,7 @@ async def get_favicon():
     return Response(status_code=404)
 
 app.include_router(health.router, tags=["health"])
+app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(setup.router, tags=["setup"])
 app.include_router(oauth.router, tags=["oauth"])
 app.include_router(permissions.router, tags=["permissions"])
