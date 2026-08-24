@@ -55,7 +55,7 @@ def _event(chat_type="group", text="hello", mentioned=None, bot_id="bot@lid", ph
 @pytest.fixture
 def hooks(monkeypatch):
     monkeypatch.setenv("WHATSAPP_ASSIST_KEYWORDS", "book,remind,weather")
-    monkeypatch.setenv("OWNER_WA_PHONE", "916300354385")
+    monkeypatch.setenv("OWNER_WA_PHONE", "916300354385,916281192096")
     ctx = FakeCtx()
     plugin.register(ctx)
     assert set(ctx.hooks) == {"pre_gateway_dispatch"}

@@ -108,8 +108,11 @@ def _is_owner(source) -> bool:
     The owner's self-chat must NEVER be keyword-gated — it is the always-on
     control surface where full agent attention is expected.
     """
-    owner = _digits(_env("OWNER_WA_PHONE"))
-    return bool(owner) and _digits(getattr(source, "user_id", "")) == owner
+    sender = _digits(getattr(source, "user_id", ""))
+    if not sender:
+        return False
+    owners = {_digits(o) for o in _env("OWNER_WA_PHONE").split(",") if o.strip()}
+    return sender in owners
 
 
 def _mentions_bot(event) -> bool:
