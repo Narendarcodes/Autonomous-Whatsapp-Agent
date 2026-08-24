@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: calendaruser
+          POSTGRES_PASSWORD: calendarpass
+          POSTGRES_DB: calendar_agent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U calendaruser"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+    env:
+      # conftest.py falls back from docker hostnames to localhost
+      POSTGRES_HOST: localhost
+      REDIS_HOST: localhost
+      # CI redis service has no password; empty disables AUTH in redis_url
+      REDIS_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt ruff
+      - name: Lint (critical errors)
+        run: ruff check app --select E9,F63,F7,F82
+      - name: Test suite
+        run: python -m pytest tests -q --no-header
