@@ -2,6 +2,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "omniWA"
     APP_VERSION: str = "2.0.0"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     BASE_URL: str = "http://localhost:8000"
     TIMEZONE: str = "Asia/Kolkata"
@@ -129,6 +130,34 @@ class Settings(BaseSettings):
     RETRY_MAX_ATTEMPTS: int = 3
     RETRY_BASE_DELAY: float = 1.0
     RETRY_MAX_DELAY: float = 10.0
+
+    @model_validator(mode="after")
+    def _refuse_insecure_production(self) -> "Settings":
+        """Fail fast (#3): never boot production on known/default secrets."""
+        if self.ENVIRONMENT.lower() != "production":
+            return self
+        problems: list[str] = []
+        if not self.ADMIN_PASSWORD or self.ADMIN_PASSWORD == "admin123":
+            problems.append("ADMIN_PASSWORD is unset or the known default")
+        if (
+            not self.SESSION_SECRET_KEY
+            or self.SESSION_SECRET_KEY == "super_secret_session_key_naru_change_me"
+        ):
+            problems.append("SESSION_SECRET_KEY is unset or the known default")
+        if not self.TOKEN_ENCRYPTION_KEY:
+            problems.append("TOKEN_ENCRYPTION_KEY is unset (OAuth tokens unreadable)")
+        if not self.LITELLM_MASTER_KEY or self.LITELLM_MASTER_KEY == "litellm_master_key_change_me":
+            problems.append("LITELLM_MASTER_KEY is unset or the known default")
+        if not self.HERMES_API_KEY or self.HERMES_API_KEY == "hermes_api_key_change_me":
+            problems.append("HERMES_API_KEY is unset or the known default")
+        if not self.OPENWA_WEBHOOK_SECRET:
+            problems.append("OPENWA_WEBHOOK_SECRET is unset (webhook HMAC unverified)")
+        if problems:
+            raise ValueError(
+                "Refusing to start in production with insecure settings:\n"
+                + "\n".join(f"  - {p}" for p in problems)
+            )
+        return self
 
     @property
     def database_url(self) -> str:
