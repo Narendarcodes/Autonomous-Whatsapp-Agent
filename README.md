@@ -52,8 +52,8 @@
 
 ### 📱 Advanced WhatsApp Messaging & DPDP Compliance
 - **Evolution API (Baileys Wrapper)**: Webhook-driven WhatsApp integration with HMAC-SHA256 signature verification.
-- **Idempotency & Rate Limiting**: Redis hash idempotency (24h TTL) + sliding window rate limiter (20 req/min).
-- **Per-Chat Sequential Queue**: Asynchronous per-chat queues buffer incoming spikes without drops.
+- **Durable Intake Pipeline (ADR-0007)**: signed webhooks flow through an admission gate (instance-scoped idempotency · fixed-window rate limiter · loop guard) into a Redis Streams consumer group — messages survive restarts, poison ones dead-letter.
+- **Outbound Seam**: one `WhatsAppOutbound` port routes every reply/alert through primary / agent / Hermes-bridge transports; brain failures retry once then send a visible fallback reply.
 - **Quoted Reply Context**: Extracted directly from WhatsApp reply bubbles (`contextInfo.quotedMessage`) and fed into LLM prompts.
 - **DPDP Compliance**: Group messages strictly filtered unless `@agent` is explicitly tagged; DMs routed seamlessly.
 - **Voice Message Processing**: Base64 audio decoding + instant transcription via Groq / Whisper.
@@ -63,47 +63,44 @@
 ## 🏗️ Architecture
 
 ```
- WhatsApp User → Evolution API (2785) 
+ WhatsApp User ⇄ Hermes Baileys Bridge
                     │
-              Webhook Receiver (8000)
+        POST /webhook/openwa  ← (signed)
                     │
-          [Signature Check + Idempotency Filter]
+     [HMAC verify → parse → InboundMessage]
                     │
-          [Sliding-Window Rate Limiting (Redis)]
+        Inbox.accept() → Ack            ← ADR-0007 seam
+   ├─ session policy · idempotency · rate limit · loop guard
+   └─ XADD omniwa:inbound  (durable, per-chat FIFO)
                     │
-          [Per-Chat Sequential Queue (asyncio)]
+     StreamConsumer (group agent_workers)
+   ├─ voice STT → DPDP @mention filter
+   ├─ user upsert → monitored/trusted checks
+   ├─ approvals / slash commands / setup intercepts
+   ├─ ACL + quiet hours
+   └─ dispatch_to_hermes  (retry ×2 → fallback reply)
                     │
-          [Voice Transcription + DPDP Compliance]
-                    │
-          [ACL + Quiet Hours Evaluation]
-                    │
-          [Google Setup Flow & Command Parser]
-                    │
-          [WhatsApp Quoted Reply Context Parser]
-                    │
-          [Sequential Dispatch to Hermes Brain]
-                    │
-    Hermes Agent (8642) + MCP Server (9000)
-                    │
-       [Tools: Calendar, Drive, Docs, Sheets, Gmail, HTTP]
+          Hermes Agent (8642)  ── tools via FastMCP (9000)
                     │
           LiteLLM Router (4000)
                     │
-     [Fallback Chain: GitHub → Gemini → Groq → OpenRouter → NIM]
+     [GitHub → Gemini → Groq → OpenRouter → NIM]
 ```
 
 ### 🐳 Container Infrastructure (`docker-compose.yml`)
 
 | Service | Port | Description |
 | :--- | :--- | :--- |
-| **backend** | `8000` | FastAPI app, webhook handler, ACL router, admin dashboard UI & OAuth endpoints. |
-| **hermes** | `8642` | Nous Research Hermes ReAct agent engine with persistent state memory. |
-| **mcp-server** | `9000` | FastMCP server exposing Google Workspace APIs, HTTP tools, and WhatsApp reply dispatcher. |
-| **litellm** | `4000` | Multi-LLM provider router with automatic failover chain. |
-| **openwa** | `2785` | Evolution API (Baileys protocol engine) maintaining WhatsApp web socket session. |
-| **postgres** | `5432` | PostgreSQL 16 database storing users, ACL records, OAuth tokens, and audit logs. |
-| **redis** | `6379` | Redis 7 caching layer for session storage, idempotency, rate limiting, and QR status. |
-| **tunnel** | N/A | Cloudflare Tunnel serving `https://api.narendar.tech` to public webhooks securely. |
+| **backend** | `8000` | FastAPI webhook edge, Inbox intake consumer, admin dashboard UI & OAuth endpoints. |
+| **hermes** | `8642` | Nous Research Hermes ReAct engine; native Baileys bridge delivers replies (v3). |
+| **postgres** | `5432` | PostgreSQL 16: users/tenants, ACLs, OAuth tokens, audit logs. |
+| **redis** | `6379` | Sessions, idempotency, rate limits, QR cache, durable `omniwa:inbound` stream. |
+| **tunnel** | — | Cloudflare Tunnel serving `https://api.narendar.tech`. |
+| **mcp-server** | `9000` | *(optional)* FastMCP tool bridge: Google Workspace, HTTP tool. |
+| **litellm** | `4000` | *(optional)* Multi-provider LLM failover router. |
+| **openwa** | `2785→8080` | *(optional)* Evolution API (Baileys) legacy/dual-session adapter. |
+| **whisper-api** | `8001` | *(optional)* Local faster-whisper STT (`STT_PROVIDER=local`). |
+| **kokoro-api** | `8002` | *(optional)* Local Kokoro TTS (`TTS_PROVIDER=local`). |
 
 ---
 
@@ -220,6 +217,18 @@ Manage user permissions, monitor system load, and configure settings at:
 - **Whitelist Contacts**: Grant permissions to specific contacts.
 - **Quiet Hours**: Define hours during which the agent refrains from automated messaging.
 - **System Metrics**: Inspect real-time CPU, Memory, and Disk usage.
+
+### 5. Database Migrations (Alembic)
+
+Schema changes are versioned — never applied from app startup.
+
+```bash
+docker compose exec backend alembic upgrade head   # apply migrations (safe on fresh AND adopted DBs)
+docker compose exec backend alembic current        # show applied revision
+```
+
+Adopting an existing pre-Alembic database? `upgrade head` detects it and only records history.
+Generate new revisions with `alembic revision -m "..."` inside the container.
 
 ---
 

@@ -1,5 +1,19 @@
 # omniWA AI Assistant & Personal OS - Database Schema
 
+## Schema Management
+
+**Alembic owns the schema** (`backend/alembic/`, asyncpg runtime / psycopg2 migration engine).
+Apply with `alembic upgrade head`; adopt existing DBs the same way — the baseline detects
+them and only records history. The SQL files in `migrations/` are legacy `initdb` scripts
+that run once on a *fresh volume*; new table/column changes must be Alembic revisions.
+
+Tables added since this document was first written and captured in baseline `0001_baseline`:
+- `users.trust_level` (`trusted|untrusted`) — sender trust gate
+- `api_keys` — provider keys surfaced to LiteLLM config rebuilds
+- `observed_contacts` — tenant-scoped contact observations (unique on tenant_id+wa_phone)
+
+
+
 ## Overview
 The system uses a hybrid database architecture:
 - **PostgreSQL**: Persistent relational data (users, events, decisions)

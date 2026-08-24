@@ -1,3 +1,7 @@
+> 📦 **Historical snapshot.** Written before the Aug 2026 v3 intake refactor (ADR-0007),
+> Alembic adoption (#9) and the outbound seam. Some findings may already be resolved —
+> see CONTEXT.md for current state.
+
 # ✅ Production Readiness Report
 
 The omniWA Autonomous WhatsApp AI Assistant codebase has been reviewed and updated to ensure stability, correctness, and feature completeness. The system is now ready for production deployment.

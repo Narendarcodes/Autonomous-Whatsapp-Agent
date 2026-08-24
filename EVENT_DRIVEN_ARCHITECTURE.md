@@ -1,3 +1,8 @@
+> **Status (Aug 2026):** This design is now LIVE as of ADR-0007. The durable stream is
+> `omniwa:inbound` (group `agent_workers`, DLQ `omniwa:inbound:dead`). The custom Redis
+> sorted-set scheduler was deleted per ADR-0001/0002 — Hermes native cron owns proactive
+> jobs. Command examples below use the current key names.
+
 # Event-Driven Architecture Upgrade
 
 ## Overview
@@ -64,7 +69,7 @@ WhatsApp → Webhook → Redis Stream → Agent Worker → LLM → WhatsApp
 ### 3. Agent Worker
 **Location:** `backend/app/workers/agent_worker.py`
 
-- Consumes from `message_queue` stream
+- Consumes from `omniwa:inbound` stream
 - Checks for pending decisions (routes to resolver vs. normal agent)
 - Calls LLM asynchronously
 - Updates Postgres
@@ -266,11 +271,12 @@ docker-compose logs -f scheduler_worker
 curl http://localhost:8000/health/detailed
 
 # Redis Stream stats
-redis-cli XINFO STREAM message_queue
+redis-cli XINFO STREAM omniwa:inbound
 
 # Sorted Set stats (delayed jobs)
-redis-cli ZCARD delayed_jobs
-redis-cli ZRANGE delayed_jobs 0 10 WITHSCORES
+# scheduler deleted (ADR-0001/0002) — Hermes native cron owns delayed work
+# redis-cli ZCARD delayed_jobs
+# redis-cli ZRANGE delayed_jobs 0 10 WITHSCORES   (obsolete)
 
 # Database stats
 psql -U calendaruser -d calendar_agent
@@ -422,7 +428,8 @@ docker restart whatsapp_calendar_agent_worker
 
 ```bash
 # Check sorted set
-redis-cli ZCARD delayed_jobs
+# scheduler deleted (ADR-0001/0002) — Hermes native cron owns delayed work
+# redis-cli ZCARD delayed_jobs
 redis-cli ZRANGE delayed_jobs 0 -1 WITHSCORES
 
 # Check scheduler worker
