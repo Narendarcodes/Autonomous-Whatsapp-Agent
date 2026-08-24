@@ -35,6 +35,8 @@ jobs:
       REDIS_HOST: localhost
       # CI redis service has no password; empty disables AUTH in redis_url
       REDIS_PASSWORD: ""
+      # deterministic owner identity for permission/pairing tests
+      OWNER_WA_PHONE: "916300354385"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

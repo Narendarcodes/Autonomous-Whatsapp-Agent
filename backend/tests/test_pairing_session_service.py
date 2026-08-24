@@ -119,7 +119,8 @@ async def test_start_repairs_paths_and_launches(tmp_path, monkeypatch, needs_sym
     os.symlink(str(tmp_path / "nowhere"), str(tmp_path / "whatsapp" / "session"))
 
     result = await svc.start_pairing_session(
-        runner=fake_runner, is_paired_fn=lambda: False, schedule_watchdog=False
+        runner=fake_runner, is_paired_fn=lambda: False, schedule_watchdog=False,
+        hermes_data_dir=str(tmp_path),
     )
 
     assert result["started"] is True
@@ -134,7 +135,8 @@ async def test_start_reports_exec_failure(tmp_path, needs_symlink):
         return False
 
     result = await svc.start_pairing_session(
-        runner=bad_runner, is_paired_fn=lambda: False, schedule_watchdog=False
+        runner=bad_runner, is_paired_fn=lambda: False, schedule_watchdog=False,
+        hermes_data_dir=str(tmp_path),
     )
     assert result == {"started": False, "reason": "exec_failed"}
 
