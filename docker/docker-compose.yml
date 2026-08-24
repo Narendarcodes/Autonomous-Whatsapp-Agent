@@ -262,7 +262,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: whatsapp_tunnel
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token eyJhIjoiM2NkZTcyZTZhODU2MjhkNTg3ZDU4OGJiN2Y2M2NkZDYiLCJ0IjoiYjM1OTBlNDctYTBiMC00YTBhLWJhMDgtOGZiNTFjNzU0ZjI0IiwicyI6IlpEWXpZVE5qWkRNdFkyUmpNaTAwTWpSaUxUZzJaR0l0TVRKbFltUm1aamRoTXpFMCJ9
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?Set TUNNEL_TOKEN in docker/.env}
     depends_on:
       - backend
     networks:
