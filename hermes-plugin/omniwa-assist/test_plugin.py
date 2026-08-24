@@ -97,6 +97,14 @@ def test_lid_form_selfchat_dm_passes(hooks, ingests):
     assert hooks["pre_gateway_dispatch"](event=ev) is None
 
 
+def test_device_suffixed_botids_match_core_chat(hooks, ingests):
+    """Regression: bridge emits bot ids WITH device suffix (@10@lid)."""
+    ev = _event(chat_type="dm", text="ping", phone="916300354385")
+    ev.source.chat_id = "13349261734098@lid"
+    ev.raw_message["botIds"] = ["916281192096@10@s.whatsapp.net", "13349261734098@10@lid"]
+    assert hooks["pre_gateway_dispatch"](event=ev) is None
+
+
 def test_dm_ingested_for_directory(hooks, ingests):
     hooks["pre_gateway_dispatch"](event=_event(chat_type="dm", text="hi there"))
     assert ingests == [("919999999999", "919999999999", "Tester")]

@@ -99,11 +99,12 @@ def _is_whatsapp(event) -> bool:
 
 
 def _digits(value) -> str:
-    return "".join(ch for ch in str(value or "") if ch.isdigit())
-
-
-def _digits(value) -> str:
-    return "".join(ch for ch in str(value or "") if ch.isdigit())
+    """Digits of an ID's CORE (before first '@'), ignoring device suffixes.
+    Bridge identities look like '13349261734098@10@lid' - naive digit
+    extraction would fold the device '10' into the number and break every
+    equality check."""
+    core = str(value or "").split("@", 1)[0]
+    return "".join(ch for ch in core if ch.isdigit())
 
 
 def _owner_numbers() -> set:
@@ -147,6 +148,16 @@ def _keyword_hit(text: str) -> str | None:
     return None
 
 
+_VERSION = "assist-v3-debug"
+
+
+def _dbg(msg):
+    try:
+        print(f"[ASSIST {os.getpid()} {_VERSION}] {msg}", flush=True)
+    except Exception:
+        pass
+
+
 def register(ctx):
     """Called by Hermes PluginManager at discovery time."""
 
@@ -155,13 +166,17 @@ def register(ctx):
             return None
         source = getattr(event, "source", None)
         is_group = getattr(source, "chat_type", "") == "group"
+        raw_dbg = getattr(event, "raw_message", None) or {}
+        _dbg(f"event chat={getattr(source,'chat_id','')} group={is_group} bots={ (raw_dbg.get('botIds') or []) } mentioned={ raw_dbg.get('mentionedIds') }")
 
         # 1) identity capture for the dashboard directory (all WhatsApp senders)
         if _ingest_configured():
             _spawn_ingest(source, event)
 
         # 2) owner's self-chat DM = always-on command channel, never gated
-        if not is_group and _is_owner_channel(source, getattr(event, "raw_message", None)):
+        owner_channel = (not is_group) and _is_owner_channel(source, getattr(event, "raw_message", None))
+        _dbg(f"owner_channel={owner_channel}")
+        if not is_group and owner_channel:
             return None
 
         # 3) explicit mentions keep the direct-command UX untouched
@@ -177,4 +192,5 @@ def register(ctx):
         directive = SUGGEST_DIRECTIVE + f"[TRIGGER KEYWORD: {hit}]\n\n"
         return {"action": "rewrite", "text": directive + text}
 
+    _dbg("register() called - v3 with LID-proof owner channel")
     ctx.register_hook("pre_gateway_dispatch", _pre_gateway_dispatch)
