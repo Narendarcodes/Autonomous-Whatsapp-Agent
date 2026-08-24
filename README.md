@@ -17,7 +17,7 @@
 
 ## 📋 Overview
 
-**omniWA** turns WhatsApp into a full-fledged **Conversational Operating System**. Built around Nous Research's **Hermes Agent ReAct Loop**, it operates autonomously, executes tool calls across your entire **Google Workspace** (Calendar, Drive, Docs, Sheets, Gmail), manages permissions for multiple users via a web dashboard, processes voice notes, enforces DPDP privacy compliance, and operates within an 8-container production Docker environment.
+**omniWA** turns WhatsApp into a full-fledged **Conversational Operating System**. Built around Nous Research's **Hermes Agent ReAct Loop**, it operates autonomously, executes tool calls across your entire **Google Workspace** (Calendar, Drive, Docs, Sheets, Gmail), manages permissions for multiple users via a web dashboard, processes voice notes, enforces DPDP privacy compliance, and runs as a lean Docker deployment (FastAPI harness + Hermes brain + PostgreSQL + Redis + Cloudflare Tunnel).
 
 ---
 
@@ -36,7 +36,7 @@
   - 👥 **Authorized Users (`has_permission=true`)**: Can chat in DMs and trigger group mentions.
   - ⏳ **Pending Users (`has_permission=false`)**: Messages dropped silently at webhook layer with audit logging.
 - **Web UI Admin Dashboard (`/dashboard`)**:
-  - Live session authentication (`naru_session` cookie backed by Redis).
+  - Live session authentication (`omniwa_session` cookie backed by Redis, instant revocation).
   - One-click contact whitelist / block toggling.
   - 1+ character autocomplete search with 300ms client debouncing & caching.
   - Quiet hours configuration & dynamic status alerts.
@@ -162,9 +162,12 @@ cp backend/.env.example backend/.env
 Key environment variables in `backend/.env`:
 
 ```env
-# Server & Security
+# Server & Security  (production refuses known defaults — see config.py)
 ENVIRONMENT=production
-ADMIN_PASSWORD=your_secure_admin_password
+ADMIN_PASSWORD=<generate>
+SESSION_SECRET_KEY=<python -c "import secrets;print(secrets.token_hex(32))">
+TOKEN_ENCRYPTION_KEY=<Fernet key — see .env.example for one-liner>
+OPENWA_WEBHOOK_SECRET=<python -c "import secrets;print(secrets.token_hex(32))">
 OWNER_WA_PHONE=919876543210
 
 # Database & Redis
@@ -173,11 +176,7 @@ POSTGRES_PASSWORD=your_db_password
 POSTGRES_DB=whatsapp_agent
 REDIS_HOST=redis
 REDIS_PORT=6379
-
-# Evolution API (WhatsApp)
-EVOLUTION_API_URL=http://openwa:2785
-EVOLUTION_API_KEY=your_evolution_api_key
-EVOLUTION_INSTANCE=AgentInstance
+REDIS_PASSWORD=your_redis_password
 
 # Google Workspace OAuth
 GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
@@ -233,7 +232,7 @@ docker compose -f docker/docker-compose.yml exec -T backend python -m pytest -x 
 ```
 
 ### Verification Highlights:
-- ✅ Authentication & session management (`naru_session` cookie verification).
+- ✅ Authentication & session management (`omniwa_session` cookie verification).
 - ✅ HMAC-SHA256 webhook signature check (`X-Evolution-Signature`).
 - ✅ Redis sliding window rate limiting & idempotency hash verification.
 - ✅ Audio voice message transcription pipeline.

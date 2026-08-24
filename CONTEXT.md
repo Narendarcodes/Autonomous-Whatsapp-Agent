@@ -48,7 +48,7 @@ The webhook pipeline consolidates behind one deep module (`Inbox`) with interfac
 ## System Status
 
 **Last Updated**: 2026-06-15  
-**Deployment**: Docker Compose (8 containers, all healthy and active)  
+**Deployment**: Docker Compose — lean v3 subset running (backend, postgres, redis, hermes+bridge, tunnel); compose defines optional extras (litellm, mcp-server, openwa, whisper-api, kokoro-api)  
 **Domain**: https://api.narendar.tech (Fully routed via Cloudflare Tunnel container)  
 **Queue**: In-memory per-chat async queue with Redis-backed sliding-window rate limiting  
 **DB**: PostgreSQL (users, events, reminders, audit logs, preferences, ACLs)
@@ -104,7 +104,7 @@ WhatsApp User → Evolution API (2785)
 ## Permission System & Authentication
 
 ### Security Credentials:
-1. **Admin Console Authentication**: Accessing `/dashboard`, `/setup`, or any admin REST routes (`/api/*`, `/permissions/*`, `/oauth/start`, `/oauth/authorize`) requires a valid `naru_session` session cookie. This cookie matches an active authenticated session stored inside Redis, generated via a credential check against `ADMIN_PASSWORD` on `/login`.
+1. **Admin Console Authentication**: Accessing `/dashboard`, `/setup`, or any admin REST routes (`/api/*`, `/permissions/*`, `/oauth/start`, `/oauth/authorize`) requires a valid `omniwa_session` session cookie. This cookie matches an active authenticated session stored inside Redis, generated via a credential check against `ADMIN_PASSWORD` on `/login`.
 2. **Access Control Lists (ACL)**:
    - **Owner** (`is_owner=true`): Whitelists contacts, modifies Preferences, and links Google.
    - **Authorized User** (`has_permission=true`): Granted access rights by the owner. Can chat in DMs and trigger mentions in groups.
