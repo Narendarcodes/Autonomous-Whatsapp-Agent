@@ -44,6 +44,15 @@ The webhook pipeline consolidates behind one deep module (`Inbox`) with interfac
    level; dashboard/auth tests survive untouched. Full decision record:
    [ADR-0007](docs/adr/0007-message-intake-module.md).
 
+### Host Docker Socket (resolved 2026-08-25 — ADR-0008)
+The backend keeps the host `/var/run/docker.sock` mount because pairing depends
+on `docker_manager.exec_detached` (it runs the bridge-coupling command inside the
+hermes container) — dropping it silently breaks WhatsApp pairing. Risk formally
+accepted with compensating controls (no unauthenticated ingress; graceful
+degradation already in place). Recommended future remediation: a least-privilege
+socket proxy, then hermes-native pairing so the socket can be removed entirely.
+[ADR-0008](docs/adr/0008-docker-socket-access.md).
+
 
 ## System Status
 
