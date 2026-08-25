@@ -164,3 +164,6 @@ backend/test_sync.py
 /stitch_*.zip
 *_screen_check.png
 scripts/debug_wa_send_patch*.py
+
+# Cloudflared locally-managed tunnel creds/config (secrets)
+docker/cloudflared/
