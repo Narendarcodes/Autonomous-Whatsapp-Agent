@@ -144,8 +144,17 @@ def test_live_env_files_ignored():
     if not shutil.which("git"):
         return
     for rel in ("backend/.env", "docker/.env"):
-        assert (REPO / rel).exists(), f"{rel} missing (dev needs it; CI uses service env)"
+        if not (REPO / rel).exists():
+            continue  # fresh checkout: nothing that could leak
         proc = subprocess.run(
             ["git", "check-ignore", rel], cwd=REPO, capture_output=True, text=True
         )
         assert proc.returncode == 0, f"{rel} is NOT gitignored — live secrets risk"
+    if shutil.which("git"):
+        proc = subprocess.run(
+            ["git", "ls-files"], cwd=REPO, capture_output=True, text=True
+        )
+        tracked_live = [
+            p for p in proc.stdout.splitlines() if Path(p).name == ".env"
+        ]
+        assert not tracked_live, f"live env files tracked in git: {tracked_live}"
