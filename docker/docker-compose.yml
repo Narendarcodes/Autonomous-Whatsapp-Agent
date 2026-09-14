@@ -1,6 +1,9 @@
 version: '3.8'  # Removed obsolete version field warning by updating to 3.8
 
 services:
+# Profiles: default lean stack = postgres, redis, openwa, backend.
+# Full brain: docker compose --profile full up (adds litellm, hermes,
+# mcp-server, tunnel, whisper-api, kokoro-api).
   # ==================== POSTGRESQL DATABASE ====================
   postgres:
     image: postgres:16-alpine
@@ -53,6 +56,7 @@ services:
 
   # ==================== LITELLM (Model Fallback Router) ====================
   litellm:
+    profiles: [full]
     image: ghcr.io/berriai/litellm:main-stable
     container_name: whatsapp_litellm
     restart: unless-stopped
@@ -74,6 +78,7 @@ services:
 
   # ==================== HERMES AGENT (AI Brain + Memory) ====================
   hermes:
+    profiles: [full]
     image: nousresearch/hermes-agent:latest
     container_name: whatsapp_hermes
     restart: unless-stopped
@@ -109,6 +114,7 @@ services:
 
   # ==================== MCP SERVER (Tool Bridge for Hermes) ====================
   mcp-server:
+    profiles: [full]
     build:
       context: ../backend
       dockerfile: Dockerfile
@@ -233,6 +239,7 @@ services:
         condition: service_healthy
       hermes:
         condition: service_healthy
+        required: false
 
     volumes:
       - ../backend/app:/app/app:ro
@@ -259,6 +266,7 @@ services:
 
   # ==================== CLOUDFLARE TUNNEL ====================
   tunnel:
+    profiles: [full]
     image: cloudflare/cloudflared:latest
     container_name: whatsapp_tunnel
     restart: unless-stopped
@@ -272,6 +280,7 @@ services:
 
   # ==================== LOCAL SPEECH-TO-TEXT (WhisperX / Faster-Whisper) ====================
   whisper-api:
+    profiles: [full]
     image: fedirz/faster-whisper-server:latest-cuda
     container_name: whatsapp_whisper_api
     restart: unless-stopped
@@ -293,6 +302,7 @@ services:
 
   # ==================== LOCAL TEXT-TO-SPEECH (Kokoro-82M) ====================
   kokoro-api:
+    profiles: [full]
     image: remsky/kokoro-fastapi:latest
     container_name: whatsapp_kokoro_api
     restart: unless-stopped
