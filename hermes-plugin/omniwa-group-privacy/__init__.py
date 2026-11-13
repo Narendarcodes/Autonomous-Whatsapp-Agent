@@ -22,7 +22,10 @@ message and visible to both hooks:
 Non-group chats (DMs, CLI, cron, api_server) are untouched.
 """
 
+import importlib.util
 import re
+import sys
+from pathlib import Path
 
 _PLUGIN_NAME = "omniwa-group-privacy"
 
@@ -55,9 +58,15 @@ def _active_chat_is_whatsapp_group() -> bool:
 
         chat_id = get_session_env("HERMES_SESSION_CHAT_ID") or ""
         session_key = get_session_env("HERMES_SESSION_KEY") or ""
+        chat_type = get_session_env("HERMES_SESSION_CHAT_TYPE") or ""
+        platform = get_session_env("HERMES_SESSION_PLATFORM") or ""
     except Exception:
         return False
     if chat_id.strip().endswith("@g.us"):
+        return True
+    # Belt and braces: if the gateway ever reports group chats under another
+    # id shape, the explicit chat_type still keeps privacy mode ON.
+    if chat_type.strip().lower() == "group" and "whatsapp" in platform.lower():
         return True
     return ":whatsapp:group:" in f":{session_key}"
 
@@ -72,6 +81,24 @@ def redact_group_text(text):
     return out if out != text else None  # None => leave response unchanged
 
 
+def _scrub_secrets(text):
+    """omniwa-guard's credential scrubber, when deployed. Hermes keeps only the
+    first transform_llm_output result, so each plugin applies the other's rule."""
+    path = Path(__file__).resolve().parent.parent / "omniwa-guard" / "guard_core.py"
+    if not path.exists():
+        return None
+    try:
+        mod = sys.modules.get("omniwa_guard_core")
+        if mod is None:
+            spec = importlib.util.spec_from_file_location("omniwa_guard_core", path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["omniwa_guard_core"] = mod
+            spec.loader.exec_module(mod)
+        return mod.scrub_secrets(text)
+    except Exception:
+        return None
+
+
 def register(ctx):
     """Called by Hermes PluginManager at discovery time."""
 
@@ -83,7 +110,8 @@ def register(ctx):
     def _transform_llm_output(response_text=None, **kwargs):
         if not _active_chat_is_whatsapp_group():
             return None
-        return redact_group_text(response_text)
+        text = _scrub_secrets(response_text) or response_text
+        return redact_group_text(text) or (text if text != response_text else None)
 
     ctx.register_hook("pre_llm_call", _pre_llm_call)
     ctx.register_hook("transform_llm_output", _transform_llm_output)

@@ -10,16 +10,27 @@ from app.models.models import User
 from app.api.setup import verify_api_admin
 from app.services.phone_utils import normalize_phone_number
 from app.services import bridge_client
+from app.services.bridge_config_service import set_sender_access
 
 router = APIRouter(dependencies=[Depends(verify_api_admin)])
 logger = get_logger(__name__)
 
 
 async def _get_owner(db: AsyncSession) -> User | None:
-    """Get the bot owner user."""
-    result = await db.execute(
-        select(User).where(User.wa_phone == settings.OWNER_WA_PHONE.lstrip("+"))
-    )
+    """Get the bot owner user.
+
+    Prefer the configured OWNER_WA_PHONE, but fall back to the row flagged
+    is_owner: when OWNER_WA_PHONE is unset (or was normalised differently)
+    every permissions endpoint used to 403 "Owner not found" even though an
+    owner existed.
+    """
+    owner_phone = (settings.OWNER_WA_PHONE or "").lstrip("+")
+    if owner_phone:
+        result = await db.execute(select(User).where(User.wa_phone == owner_phone))
+        owner = result.scalar_one_or_none()
+        if owner:
+            return owner
+    result = await db.execute(select(User).where(User.is_owner == True).limit(1))  # noqa: E712
     return result.scalar_one_or_none()
 
 
@@ -136,6 +147,12 @@ async def grant_permission(phone: str = Query(..., description="User phone to gr
         user.has_permission = True
         await db.commit()
         logger.info(f"Granted permission to {phone}")
+        # Until 2026-11 grant/revoke only changed this DB row; with Hermes owning
+        # WhatsApp nothing read it, so revoked people could keep chatting.
+        try:
+            await set_sender_access(phone_normalized, allowed=True)
+        except Exception as exc:  # file/docker errors must not 500 the dashboard
+            logger.error("grant: bridge allowlist update failed: %s", exc)
 
         return {
             "status": "granted",
@@ -166,6 +183,10 @@ async def revoke_permission(phone: str = Query(..., description="User phone to r
         user.has_permission = False
         await db.commit()
         logger.info(f"Revoked permission from {phone}")
+        try:
+            await set_sender_access(phone_normalized, allowed=False)
+        except Exception as exc:
+            logger.error("revoke: bridge allowlist/blocklist update failed: %s", exc)
 
         return {
             "status": "revoked",

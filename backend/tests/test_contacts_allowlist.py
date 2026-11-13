@@ -93,3 +93,15 @@ async def test_allowlist_idempotent_second_call(client, monkeypatch):
 async def test_allowlist_unknown_contact_404(client):
     resp = await client.post("/api/contacts/00000000-0000-0000-0000-000000000000/allowlist")
     assert resp.status_code == 404
+
+
+# --- regression: JID-shaped identities from the gateway (2026-11) ---
+
+def test_normalize_wa_identity():
+    from app.api.contacts import normalize_wa_identity, allowlist_variants
+    assert normalize_wa_identity("919999999999@s.whatsapp.net") == "919999999999"
+    assert normalize_wa_identity("919999999999:12@s.whatsapp.net") == "919999999999"
+    assert normalize_wa_identity("+919999999999") == "919999999999"
+    assert normalize_wa_identity("200283032441063@lid") == "200283032441063@lid"
+    assert allowlist_variants("919999999999") == ("919999999999", "919999999999@s.whatsapp.net")
+    assert allowlist_variants("200283032441063@lid") == ("200283032441063@lid",)

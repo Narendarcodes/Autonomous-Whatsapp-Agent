@@ -30,7 +30,15 @@ logger = get_logger(__name__)
 
 _HERMES_BIN = "/opt/hermes/.venv/bin/hermes"
 # Bracket trick: matches "hermes whatsapp" processes but never our own command line.
-_KILL_PREVIOUS = 'pkill -f "hermes[ ]whatsapp" 2>/dev/null'
+# Kill any previous wizard, but never the shell running this command: its own
+# command line contains "hermes whatsapp" (the script -qfc argument), so a bare
+# `pkill -f "hermes[ ]whatsapp"` killed itself before the QR file was created,
+# and every dashboard "Start pairing" silently produced no QR. Verified live
+# on Hermes 0.23.1, 2026-11-13.
+_KILL_PREVIOUS = (
+    'for p in $(pgrep -f "hermes[ ]whatsapp"); do '
+    '[ "$p" != "$$" ] && kill "$p" 2>/dev/null; done'
+)
 _WATCHDOG_MAX_POLLS = 100       # ~5 min at 3s intervals
 _WATCHDOG_INTERVAL_S = 3.0
 
@@ -45,31 +53,54 @@ def _paths(hermes_data_dir: str | None = None) -> dict:
     }
 
 
+# The SAME volume is mounted at different paths: /opt/hermes_data in the
+# backend, /opt/data in the hermes container. Anything that is *executed in*
+# or *resolved by* the hermes container must use the container-side path.
+_LEGACY_LINK_TARGET = "../platforms/whatsapp/session"  # relative: valid in both mounts
+
+
+def _container_paths() -> dict:
+    return _paths(getattr(settings, "HERMES_CONTAINER_DATA_DIR", "/opt/data"))
+
+
 def ensure_wizard_paths(hermes_data_dir: str | None = None) -> None:
-    """Guarantee the wizard's legacy symlink points at a live session dir."""
+    """Guarantee the wizard's legacy symlink points at a live session dir.
+
+    The link target is RELATIVE. An absolute target written from the backend
+    (/opt/hermes_data/...) dangles inside the hermes container (/opt/data/...)
+    — which re-created the exact crash this function exists to repair.
+    """
     p = _paths(hermes_data_dir)
     os.makedirs(p["session"], exist_ok=True)
     os.makedirs(os.path.dirname(p["legacy_link"]), exist_ok=True)
 
     link = p["legacy_link"]
     if os.path.islink(link):
-        if os.path.realpath(link) == os.path.realpath(p["session"]):
-            return  # already correct — touch nothing
+        if os.readlink(link) == _LEGACY_LINK_TARGET:
+            return  # already correct (relative) — touch nothing
+        # An absolute link valid only from the backend's mount still dangles
+        # inside hermes, so rewrite anything that isn't the relative form.
         os.remove(link)  # wrong target or dangling → replace
-        os.symlink(p["session"], link)
+        os.symlink(_LEGACY_LINK_TARGET, link)
     elif not os.path.exists(link):
         # Dangling symlinks report exists()==False but islink()==True was caught
         # above; plain missing → create.
         if os.path.islink(link):
             os.remove(link)
-        os.symlink(p["session"], link)
+        os.symlink(_LEGACY_LINK_TARGET, link)
     # else: a REAL directory occupies the legacy path — never destroy data;
     # the wizard will use it directly and Baileys creds land there.
 
 
 def build_pairing_command(hermes_data_dir: str | None = None) -> str:
-    """Headless one-liner that yields rotating QRs into pairing_session.out."""
-    out = _paths(hermes_data_dir)["pairing_out"]
+    """Headless one-liner that yields rotating QRs into pairing_session.out.
+
+    Runs INSIDE the hermes container (docker exec), so the output path must be
+    the container-side mount (/opt/data), not the backend's /opt/hermes_data —
+    otherwise `script` cannot open its log and no QR is ever produced.
+    hermes_data_dir is only honoured for tests.
+    """
+    out = (_paths(hermes_data_dir) if hermes_data_dir else _container_paths())["pairing_out"]
     return (
         f"{_KILL_PREVIOUS}; "
         f": > \"{out}\"; "

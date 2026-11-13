@@ -19,6 +19,7 @@ from app.models.models import User, AuditLog, ApiKey, CustomerGoogleToken
 from app.core.security import decrypt_token
 from app.services.preferences_service import preferences_service
 from app.services.oauth_service import build_authorization_url
+import secrets
 import uuid
 
 
@@ -59,11 +60,27 @@ async def login_page(request: Request) -> Response:
     return Response(content=html, media_type="text/html")
 
 
+def _safe_next(target: str | None) -> str:
+    """Only same-site absolute paths; blocks open redirects (//evil, http://)."""
+    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return "/dashboard"
+
+
+def _legacy_password_usable() -> bool:
+    """The legacy ADMIN_PASSWORD fallback must never accept the shipped
+    default ("admin123") — that was a working backdoor on any deployment
+    that forgot to set it."""
+    pw = settings.ADMIN_PASSWORD or ""
+    return bool(pw) and pw != "admin123" and len(pw) >= 8
+
+
 @router.post("/login")
 async def login_submit(
     request: Request,
     password: str = Form(...),
     email: str = Form(""),
+    next: str = Form(""),
 ) -> Response:
     """Multi-tenant login: email + password against dashboard_users (argon2).
 
@@ -84,14 +101,14 @@ async def login_submit(
                     dash_user.password_hash = hash_password(password)
                     await db.commit()
                 sid = await create_session(dash_user.tenant_id, dash_user.id)
-                response = RedirectResponse(url="/dashboard", status_code=303)
+                response = RedirectResponse(url=_safe_next(next or request.query_params.get("next")), status_code=303)
                 set_session_cookie(response, sid)
                 return response
     except Exception:
         pass  # pre-migration DB — fall through to legacy admin password
 
     # Legacy single-owner fallback (no dashboard users provisioned yet)
-    if not email and password == settings.ADMIN_PASSWORD:
+    if not email and _legacy_password_usable() and secrets.compare_digest(password, settings.ADMIN_PASSWORD):
         try:
             async with AsyncSessionLocal() as db:
                 count_res = await db.execute(select(func.count()).select_from(DashboardUser))
@@ -101,8 +118,12 @@ async def login_submit(
                     response = RedirectResponse(url="/dashboard", status_code=303)
                     response.set_cookie("naru_session", session_id, httponly=True, secure=False, max_age=86400)
                     return response
-        except Exception:
-            # Pre-migration DB (table missing) — allow legacy admin password
+        except Exception as exc:
+            # Pre-migration DB (table missing) — allow legacy admin password.
+            # Any OTHER DB failure must fail closed, not log the caller in.
+            if "dashboard_users" not in str(exc) and "does not exist" not in str(exc):
+                logger.error("Legacy login aborted, DB error: %s", exc)
+                return RedirectResponse(url="/login?error=true", status_code=303)
             session_id = str(uuid.uuid4())
             await cache_set(f"session:{session_id}", "1", ttl_seconds=86400)
             response = RedirectResponse(url="/dashboard", status_code=303)

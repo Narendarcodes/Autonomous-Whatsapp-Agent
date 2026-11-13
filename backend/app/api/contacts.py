@@ -9,7 +9,9 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,11 +28,41 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
+def normalize_wa_identity(value: str) -> str:
+    """Canonical identity for a WhatsApp sender.
+
+    The Hermes gateway reports senders as JIDs (``919xxx@s.whatsapp.net``,
+    sometimes device-qualified ``919xxx:12@s.whatsapp.net``) or as LIDs
+    (``2002...@lid``). Storing the raw JID made the one-click allowlist emit
+    garbage like ``919xxx@s.whatsapp.net@s.whatsapp.net`` that never matches.
+    Phone JIDs collapse to bare digits; LIDs keep their ``@lid`` suffix.
+    """
+    v = (value or "").strip()
+    v = re.sub(r":\d+(?=@)", "", v)          # drop device suffix
+    if v.endswith("@s.whatsapp.net") or v.endswith("@c.us"):
+        v = v.split("@", 1)[0]
+    if "@" not in v:
+        v = v.lstrip("+")
+    return v
+
+
+def allowlist_variants(identity: str) -> tuple[str, ...]:
+    """Entries to add to the bridge allow_from for one identity."""
+    if "@" in identity:          # LID / other JID: exact form only
+        return (identity,)
+    return (identity, f"{identity}@s.whatsapp.net")
+
+
 class ContactIn(BaseModel):
     phone: str = Field(min_length=5, max_length=64)
     lid: str | None = None
     name: str | None = Field(default=None, max_length=128)
     chat_jid: str | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def _norm_phone(cls, v: str) -> str:
+        return normalize_wa_identity(v)
 
 
 class IngestPayload(BaseModel):
@@ -71,11 +103,12 @@ async def _upsert_contacts(contacts: list[ContactIn], tenant_id: int | None = No
                 )
             )
             row = res.scalar_one_or_none()
+            lid = c.lid or (c.phone if c.phone.endswith("@lid") else None)
             if row is None:
                 row = ObservedContact(
                     tenant_id=tenant_id,
                     wa_phone=c.phone,
-                    lid=c.lid or None,
+                    lid=lid,
                     display_name=(c.name or None),
                     source_chats=[c.chat_jid] if c.chat_jid else [],
                     first_seen_at=now,
@@ -83,8 +116,8 @@ async def _upsert_contacts(contacts: list[ContactIn], tenant_id: int | None = No
                 )
                 db.add(row)
             else:
-                if c.lid and not row.lid:
-                    row.lid = c.lid
+                if lid and not row.lid:
+                    row.lid = lid
                 if c.name and c.name != row.display_name:
                     row.display_name = c.name
                 if c.chat_jid and c.chat_jid not in (row.source_chats or []):
@@ -95,24 +128,34 @@ async def _upsert_contacts(contacts: list[ContactIn], tenant_id: int | None = No
 
 
 @router.post("/{contact_id}/allowlist", dependencies=[Depends(verify_api_admin)])
-async def allowlist_contact(contact_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def allowlist_contact(contact_id: str, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
     """Merge this contact into the bridge allow_from (bare + s.whatsapp.net)
     and restart hermes so the transport gate picks it up."""
     res = await db.execute(select(ObservedContact).where(ObservedContact.id == contact_id))
     row = res.scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="Contact not found")
+    # Tenant isolation: a dashboard user may only allowlist their own contacts.
+    try:
+        principal = await get_principal(request)
+        if row.tenant_id != principal.tenant_id:
+            raise HTTPException(status_code=404, detail="Contact not found")
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise
+        # legacy single-owner session → default tenant semantics
 
+    identity = normalize_wa_identity(row.wa_phone)
     cfg = await get_bridge_config()
     allow = list(cfg.get("allow_from") or [])
-    for variant in (row.wa_phone, f"{row.wa_phone}@s.whatsapp.net"):
+    for variant in allowlist_variants(identity):
         if variant not in allow:
             allow.append(variant)
 
     result = await set_bridge_config({"allow_from": allow})
     return {
         "contact_id": contact_id,
-        "wa_phone": row.wa_phone,
+        "wa_phone": identity,
         "allow_from": result.get("allow_from", allow),
         "restarted": bool(result.get("restarted", False)),
     }

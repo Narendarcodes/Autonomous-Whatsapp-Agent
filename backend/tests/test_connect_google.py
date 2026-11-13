@@ -495,7 +495,8 @@ def test_dashboard_tab_deep_linking():
 
 
 class TestConnectGoogleAlias:
-    """SOUL.md advertises https://api.narendar.tech/connect-google — it must work."""
+    """SOUL.md advertises https://api.narendar.tech/connect-google — it must work
+    for the signed-in owner and must NOT let strangers link their Google account."""
 
     @pytest.fixture
     def client(self):
@@ -507,7 +508,57 @@ class TestConnectGoogleAlias:
         app.include_router(_imp.import_module("app.api.oauth").router)
         return TestClient(app)
 
-    def test_redirects_to_google_consent(self, client, monkeypatch):
+    @pytest.fixture
+    def signed_in(self, monkeypatch):
+        import app.api.setup as setup_api
+
+        async def yes(request):
+            return True
+
+        monkeypatch.setattr(setup_api, "is_authenticated", yes)
+
+    @pytest.fixture
+    def owner_lookup(self, monkeypatch):
+        import app.api.oauth as api
+        from types import SimpleNamespace
+
+        class _Res:
+            def scalar_one_or_none(self):
+                return SimpleNamespace(wa_phone="916300354385")
+
+        class _DB:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def execute(self, *a, **k):
+                return _Res()
+
+        monkeypatch.setattr(api, "AsyncSessionLocal", lambda: _DB())
+
+    def test_unauthenticated_is_sent_to_login(self, client, monkeypatch):
+        import app.api.oauth as api
+        import app.api.setup as setup_api
+
+        async def no(request):
+            return False
+
+        called = {}
+
+        async def fake_cache_set(key, value, ttl_seconds=None):
+            called["hit"] = True
+
+        monkeypatch.setattr(setup_api, "is_authenticated", no)
+        monkeypatch.setattr(api, "cache_set", fake_cache_set)
+
+        resp = client.get("/connect-google", follow_redirects=False)
+        assert resp.status_code in (302, 303, 307)
+        assert resp.headers["location"].startswith("/login")
+        assert "hit" not in called  # no OAuth state minted for strangers
+
+    def test_redirects_to_google_consent(self, client, monkeypatch, signed_in, owner_lookup):
         import app.api.oauth as api
 
         async def fake_cache_set(key, value, ttl_seconds=None):
@@ -521,7 +572,7 @@ class TestConnectGoogleAlias:
         assert resp.status_code in (301, 302, 303, 307)
         assert resp.headers["location"].startswith("https://accounts.google.com/")
 
-    def test_caches_state_with_verifier_and_phone(self, client, monkeypatch):
+    def test_caches_state_with_verifier_and_phone(self, client, monkeypatch, signed_in, owner_lookup):
         import app.api.oauth as api
 
         captured = {}
@@ -540,4 +591,4 @@ class TestConnectGoogleAlias:
         import json
         data = json.loads(captured["value"])
         assert data["code_verifier"] == "verifier_xyz"
-        assert data.get("phone")  # owner phone resolved
+        assert data.get("phone") == "916300354385"  # owner phone resolved from DB

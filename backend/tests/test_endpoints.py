@@ -25,12 +25,24 @@ async def test_system_status_endpoint():
         assert data["status"] in ("online", "error")
 
 @pytest.mark.asyncio
-async def test_access_control_permissions(db_session):
+async def test_access_control_permissions(db_session, monkeypatch, tmp_path):
     """Verify user registration, permission grants, and revocations."""
+    # grant/revoke now write the Hermes allowlist + guard blocklist: keep them in tmp
+    import app.services.bridge_config_service as bcs
+    monkeypatch.setattr(bcs.settings, "HERMES_DATA_DIR", str(tmp_path))
+    restarts = []
+    async def _fake_restart():
+        restarts.append(1)
+        return True
+    monkeypatch.setattr(bcs, "restart_hermes", _fake_restart)
+
     # Seed owner user
     owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-    if not owner_phone:
-        owner_phone = "916300354385" # fallback for test runner if settings has no owner phone
+    # The fixture phones below must never equal the owner's: .env.example ships
+    # OWNER_WA_PHONE=919999999999, which collided on ix_users_wa_phone.
+    if not owner_phone or owner_phone in ("919999999999", "918888888888"):
+        owner_phone = "916300354385"
+        monkeypatch.setattr(settings, "OWNER_WA_PHONE", owner_phone)
     owner = User(wa_phone=owner_phone, is_owner=True, has_permission=True)
     db_session.add(owner)
 
@@ -58,6 +70,13 @@ async def test_access_control_permissions(db_session):
         # Verify DB updated
         await db_session.refresh(user)
         assert user.has_permission is False
+
+        # ...and that revoke reached WhatsApp: off the allowlist, on the blocklist
+        import json as _json, yaml as _yaml
+        wa = (_yaml.safe_load((tmp_path / "config.yaml").read_text()) or {}).get("whatsapp", {})
+        assert test_phone not in (wa.get("allow_from") or [])
+        assert test_phone in _json.loads((tmp_path / "omniwa_guard.json").read_text())["blocked"]
+        assert restarts  # hermes restarted so the bridge re-reads allow_from
 
         # 3. Grant permission to a non-existing user (should auto-create and whitelist)
         new_phone = "918888888888"
@@ -105,8 +124,9 @@ async def test_unauthenticated_api_redirect():
         assert resp2.headers["location"] == "/login"
 
 @pytest.mark.asyncio
-async def test_login_success():
+async def test_login_success(monkeypatch):
     """Verify submitting the correct password returns a session cookie and redirects."""
+    monkeypatch.setattr(settings, "ADMIN_PASSWORD", "a-strong-test-password")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # Wrong password redirects to /login?error=true
         resp = await ac.post("/login", data={"password": "wrong_password"})
@@ -118,6 +138,16 @@ async def test_login_success():
         assert resp2.status_code == 303
         assert resp2.headers["location"] == "/dashboard"
         assert "naru_session" in resp2.cookies
+
+
+@pytest.mark.asyncio
+async def test_default_admin_password_is_rejected(monkeypatch):
+    """The shipped default 'admin123' must never open the dashboard."""
+    monkeypatch.setattr(settings, "ADMIN_PASSWORD", "admin123")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/login", data={"password": "admin123"})
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login?error=true"
 
 
 @pytest.mark.asyncio

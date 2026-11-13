@@ -206,3 +206,48 @@ class TestModuleLevelHelpers:
         assert restarted == [True]
         eff = await svc_mod.get_bridge_config(default_mode="self-chat")
         assert eff["mode"] == "bot"
+
+
+# --- regression: Hermes gates groups on group_allow_from (2026-11) ---
+
+async def test_group_jids_are_written_to_group_allow_from(tmp_path):
+    import yaml
+    from app.services.bridge_config_service import BridgeConfigService
+
+    svc = BridgeConfigService(base_dir=str(tmp_path))
+    await svc.apply_update({"allow_from": ["916300354385", "120363406613211534@g.us"]})
+    wa = yaml.safe_load((tmp_path / "config.yaml").read_text())["whatsapp"]
+    assert wa["group_allow_from"] == ["120363406613211534@g.us"]
+    eff = await svc.get_effective()
+    assert eff["allow_from"] == ["916300354385", "120363406613211534@g.us"]  # one list in the UI
+
+
+# --- grant/revoke -> Hermes allowlist + omniwa-guard blocklist (2026-11) ---
+
+@pytest.mark.asyncio
+async def test_set_sender_access_grant_then_revoke(tmp_path, monkeypatch):
+    import json
+    import app.services.bridge_config_service as svc_mod
+
+    monkeypatch.setattr(svc_mod.settings, "HERMES_DATA_DIR", str(tmp_path))
+    restarts = []
+
+    async def _fake_restart():
+        restarts.append(1)
+        return True
+
+    monkeypatch.setattr(svc_mod, "restart_hermes", _fake_restart)
+
+    await svc_mod.set_sender_access("919876543210", allowed=True)
+    svc = svc_mod.BridgeConfigService(str(tmp_path))
+    assert "919876543210" in svc._read_whatsapp_section()["allow_from"]
+    assert svc.read_guard().get("blocked") == []
+
+    await svc_mod.set_sender_access("919876543210", allowed=False)
+    assert "919876543210" not in svc._read_whatsapp_section()["allow_from"]
+    assert json.loads((tmp_path / "omniwa_guard.json").read_text())["blocked"] == ["919876543210"]
+    assert len(restarts) == 2
+
+    # granting again lifts the block
+    await svc_mod.set_sender_access("919876543210", allowed=True)
+    assert svc.read_guard()["blocked"] == []

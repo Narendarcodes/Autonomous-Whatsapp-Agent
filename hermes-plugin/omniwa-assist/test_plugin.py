@@ -109,3 +109,64 @@ def test_ingest_defaults_off_until_configured(monkeypatch, hooks):
     monkeypatch.setattr(plugin, "_ingest_configured", lambda: False)
     hooks["pre_gateway_dispatch"](event=_event())
     assert calls == []
+
+
+# --- regressions fixed 2026-11 ---
+
+@pytest.fixture(autouse=True)
+def _clear_offers():
+    plugin._open_offers.clear()
+    yield
+    plugin._open_offers.clear()
+
+
+@pytest.mark.parametrize("text", [
+    "check my facebook", "new notebook", "near the border", "good explanation", "planet earth",
+])
+def test_keyword_substrings_do_not_trigger(hooks, ingests, text):
+    assert hooks["pre_gateway_dispatch"](event=_event(text=text)) == {
+        "action": "skip", "reason": "assist_no_keyword"}
+
+
+def test_offer_can_be_accepted_with_plain_yes(hooks, ingests):
+    """Bot offers help -> the same member's 'yes' must reach the agent."""
+    hook = hooks["pre_gateway_dispatch"]
+    assert hook(event=_event(text="can you book a table"))["action"] == "rewrite"
+    assert hook(event=_event(text="yes please")) is None          # passes through
+    # one-shot: the next unrelated chatter is gated again
+    assert hook(event=_event(text="lol"))["action"] == "skip"
+
+
+def test_offer_followup_only_for_same_sender(hooks, ingests):
+    hook = hooks["pre_gateway_dispatch"]
+    hook(event=_event(text="book a table", phone="911111111111"))
+    assert hook(event=_event(text="yes", phone="912222222222"))["action"] == "skip"
+
+
+def test_device_qualified_bot_mention_passes(hooks, ingests):
+    ev = _event(text="hey", mentioned=["bot:12@lid"])
+    assert hooks["pre_gateway_dispatch"](event=ev) is None
+
+
+def test_slash_command_passes(hooks, ingests):
+    assert hooks["pre_gateway_dispatch"](event=_event(text="/status")) is None
+
+
+def test_sender_identity_strips_jid_suffix():
+    src = SimpleNamespace(user_id="919999999999:3@s.whatsapp.net")
+    assert plugin._sender_identity(src) == {"phone": "919999999999", "lid": None}
+    src = SimpleNamespace(user_id="200283032441063@lid")
+    assert plugin._sender_identity(src) == {"phone": "200283032441063@lid", "lid": "200283032441063@lid"}
+
+
+# --- omniwa-guard deferral (plugin load order must not matter) ---
+
+def test_guard_skip_beats_keyword_rewrite(hooks, ingests, monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("WHATSAPP_MODE", "bot")
+    monkeypatch.setenv("OWNER_WA_PHONE", "919000000001")
+    monkeypatch.delenv("OMNIWA_GROUP_GUESTS", raising=False)
+    (tmp_path / "config.yaml").write_text("whatsapp:\n  allow_from: []\n", encoding="utf-8")
+    out = hooks["pre_gateway_dispatch"](event=_event(text="can you book a table", phone="919888877777"))
+    assert out == {"action": "skip", "reason": "omniwa_guard_group_member_not_allowlisted"}
+    assert len(ingests) == 1  # still recorded in the contacts directory

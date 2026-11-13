@@ -163,22 +163,41 @@ async def oauth_start(phone: str = Query(..., description="WhatsApp phone of the
 
 
 @router.get("/connect-google")
-async def connect_google() -> RedirectResponse:
-    """Public alias advertised by the agent soul (SOUL.md tells users to visit
-    https://api.narendar.tech/connect-google). Resolves the owner phone and
-    redirects straight to Google's consent screen.
+async def connect_google(request: Request) -> RedirectResponse:
+    """Alias advertised by the agent soul (SOUL.md tells users to visit
+    https://api.narendar.tech/connect-google).
 
-    Single-owner semantics: token lands on OWNER_WA_PHONE / default tenant,
-    mirroring the legacy fallback in /oauth/authorize.
+    SECURITY: this used to be fully public. Anyone who found the URL could
+    complete Google consent with THEIR account, and the callback stored that
+    token on the owner record (tenant 1), overwrote the owner's Google link,
+    synced it into Hermes and restarted the agent. Now it requires a dashboard
+    session; unauthenticated visitors are sent to /login and bounced back here.
     """
     import json
+
+    from app.api.setup import is_authenticated
+
+    if not await is_authenticated(request):
+        return RedirectResponse(url="/login?next=/connect-google", status_code=302)
+
+    try:
+        from app.core.auth import get_principal
+
+        tenant_id = (await get_principal(request)).tenant_id
+    except HTTPException:
+        tenant_id = 1  # legacy single-owner session
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.is_owner == True))  # noqa: E712
+        owner = result.scalar_one_or_none()
+    owner_phone = owner.wa_phone if owner else settings.OWNER_WA_PHONE.lstrip("+")
 
     state = secrets.token_urlsafe(24)
     auth_url, code_verifier = build_authorization_url(state)
     state_data = {
-        "phone": settings.OWNER_WA_PHONE.lstrip("+"),
+        "phone": owner_phone,
         "code_verifier": code_verifier,
-        "tenant_id": 1,
+        "tenant_id": tenant_id,
     }
     await cache_set(f"oauth_state:{state}", json.dumps(state_data), ttl_seconds=600)
     return RedirectResponse(url=auth_url)

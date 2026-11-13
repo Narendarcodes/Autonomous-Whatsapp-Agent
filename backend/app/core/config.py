@@ -50,7 +50,8 @@ class Settings(BaseSettings):
     # so Hermes sends the model's response itself; omniWA stops calling Evolution.
     HERMES_OWNS_WHATSAPP: bool = False
     # Shared hermes_data volume mount (bridge.log / creds.json live here)
-    HERMES_DATA_DIR: str = "/opt/hermes_data"
+    HERMES_DATA_DIR: str = "/opt/hermes_data"          # shared volume as mounted in the backend
+    HERMES_CONTAINER_DATA_DIR: str = "/opt/data"       # same volume as mounted inside hermes
     HERMES_HEALTH_URL: str = "http://hermes:8642"
 
     # LiteLLM proxy

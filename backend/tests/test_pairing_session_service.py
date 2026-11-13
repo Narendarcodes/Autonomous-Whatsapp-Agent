@@ -61,12 +61,34 @@ def test_valid_symlink_left_untouched(tmp_path, needs_symlink):
     root.mkdir(parents=True)
     legacy = tmp_path / "whatsapp"
     legacy.mkdir()
-    os.symlink(str(root), str(legacy / "session"))
+    os.symlink("../platforms/whatsapp/session", str(legacy / "session"))
     before = os.readlink(str(legacy / "session"))
 
     svc.ensure_wizard_paths(str(tmp_path))
 
     assert os.readlink(str(legacy / "session")) == before
+
+
+def test_absolute_link_rewritten_relative(tmp_path, needs_symlink):
+    """An absolute link written from the backend mount (/opt/hermes_data/...)
+    dangles inside hermes (/opt/data/...). It must become relative."""
+    root = tmp_path / "platforms" / "whatsapp" / "session"
+    root.mkdir(parents=True)
+    legacy = tmp_path / "whatsapp"
+    legacy.mkdir()
+    os.symlink(str(root), str(legacy / "session"))
+
+    svc.ensure_wizard_paths(str(tmp_path))
+
+    assert not os.path.isabs(os.readlink(str(legacy / "session")))
+    assert (legacy / "session").resolve() == root.resolve()
+
+
+def test_default_pairing_command_uses_container_mount():
+    """docker exec runs inside hermes, where the volume is /opt/data."""
+    cmd = svc.build_pairing_command()
+    assert "/opt/data/platforms/whatsapp/pairing_session.out" in cmd
+    assert "/opt/hermes_data" not in cmd
 
 
 def test_real_dir_at_legacy_path_not_destroyed(tmp_path):
@@ -89,7 +111,8 @@ def test_build_pairing_command_shape(tmp_path):
     assert "printf" in cmd and "'n\\ny\\n'" in cmd   # scripted answers
     assert "pairing_session.out" in cmd              # QR lands on shared volume
     assert ": >" in cmd                              # stale output truncated
-    assert "pkill" in cmd                            # prior wizard killed
+    assert "pgrep" in cmd and "kill" in cmd          # prior wizard killed
+    assert '"$p" != "$$"' in cmd                     # ...but never this shell
 
 
 # ---------- start gating ----------
@@ -119,7 +142,8 @@ async def test_start_repairs_paths_and_launches(tmp_path, monkeypatch, needs_sym
     os.symlink(str(tmp_path / "nowhere"), str(tmp_path / "whatsapp" / "session"))
 
     result = await svc.start_pairing_session(
-        runner=fake_runner, is_paired_fn=lambda: False, schedule_watchdog=False
+        runner=fake_runner, is_paired_fn=lambda: False, schedule_watchdog=False,
+        hermes_data_dir=str(tmp_path),
     )
 
     assert result["started"] is True
@@ -134,7 +158,8 @@ async def test_start_reports_exec_failure(tmp_path, needs_symlink):
         return False
 
     result = await svc.start_pairing_session(
-        runner=bad_runner, is_paired_fn=lambda: False, schedule_watchdog=False
+        runner=bad_runner, is_paired_fn=lambda: False, schedule_watchdog=False,
+        hermes_data_dir=str(tmp_path),
     )
     assert result == {"started": False, "reason": "exec_failed"}
 
