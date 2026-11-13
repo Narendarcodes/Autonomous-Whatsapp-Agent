@@ -30,7 +30,15 @@ logger = get_logger(__name__)
 
 _HERMES_BIN = "/opt/hermes/.venv/bin/hermes"
 # Bracket trick: matches "hermes whatsapp" processes but never our own command line.
-_KILL_PREVIOUS = 'pkill -f "hermes[ ]whatsapp" 2>/dev/null'
+# Kill any previous wizard, but never the shell running this command: its own
+# command line contains "hermes whatsapp" (the script -qfc argument), so a bare
+# `pkill -f "hermes[ ]whatsapp"` killed itself before the QR file was created,
+# and every dashboard "Start pairing" silently produced no QR. Verified live
+# on Hermes 0.23.1, 2026-11-13.
+_KILL_PREVIOUS = (
+    'for p in $(pgrep -f "hermes[ ]whatsapp"); do '
+    '[ "$p" != "$$" ] && kill "$p" 2>/dev/null; done'
+)
 _WATCHDOG_MAX_POLLS = 100       # ~5 min at 3s intervals
 _WATCHDOG_INTERVAL_S = 3.0
 

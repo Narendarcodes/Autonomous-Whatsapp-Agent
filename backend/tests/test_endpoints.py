@@ -25,12 +25,15 @@ async def test_system_status_endpoint():
         assert data["status"] in ("online", "error")
 
 @pytest.mark.asyncio
-async def test_access_control_permissions(db_session):
+async def test_access_control_permissions(db_session, monkeypatch):
     """Verify user registration, permission grants, and revocations."""
     # Seed owner user
     owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
-    if not owner_phone:
-        owner_phone = "916300354385" # fallback for test runner if settings has no owner phone
+    # The fixture phones below must never equal the owner's: .env.example ships
+    # OWNER_WA_PHONE=919999999999, which collided on ix_users_wa_phone.
+    if not owner_phone or owner_phone in ("919999999999", "918888888888"):
+        owner_phone = "916300354385"
+        monkeypatch.setattr(settings, "OWNER_WA_PHONE", owner_phone)
     owner = User(wa_phone=owner_phone, is_owner=True, has_permission=True)
     db_session.add(owner)
 

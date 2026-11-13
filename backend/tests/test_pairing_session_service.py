@@ -111,7 +111,8 @@ def test_build_pairing_command_shape(tmp_path):
     assert "printf" in cmd and "'n\\ny\\n'" in cmd   # scripted answers
     assert "pairing_session.out" in cmd              # QR lands on shared volume
     assert ": >" in cmd                              # stale output truncated
-    assert "pkill" in cmd                            # prior wizard killed
+    assert "pgrep" in cmd and "kill" in cmd          # prior wizard killed
+    assert '"$p" != "$$"' in cmd                     # ...but never this shell
 
 
 # ---------- start gating ----------
