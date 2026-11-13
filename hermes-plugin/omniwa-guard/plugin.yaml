@@ -1,0 +1,9 @@
+name: omniwa-guard
+version: 1.0.0
+description: >
+  Safety layer for omniWA on WhatsApp. Drops blocked senders, rate-limits
+  floods, lets only the owner and allowlisted people command the bot inside
+  allowlisted groups, flags prompt-injection attempts, limits non-owners to
+  low-risk tools, blocks access to secret files, and scrubs credentials from
+  every reply.
+kind: standalone

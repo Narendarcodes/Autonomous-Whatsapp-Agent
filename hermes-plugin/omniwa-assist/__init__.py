@@ -28,6 +28,9 @@ import re
 import threading
 import time
 import urllib.request
+import importlib.util
+import sys
+from pathlib import Path
 
 _PLUGIN_NAME = "omniwa-assist"
 
@@ -180,6 +183,26 @@ def _keyword_hit(text: str) -> str | None:
     return None
 
 
+def _guard_verdict(event):
+    """Defer to omniwa-guard when it is deployed. Hermes uses the FIRST
+    skip/rewrite any plugin returns, so without this a keyword rewrite here
+    could override the guard's skip (blocked sender, flood, non-allowlisted
+    group member, prompt injection) depending on plugin load order."""
+    path = Path(__file__).resolve().parent.parent / "omniwa-guard" / "__init__.py"
+    if not path.exists():
+        return None
+    try:
+        mod = sys.modules.get("omniwa_guard_shared")
+        if mod is None:
+            spec = importlib.util.spec_from_file_location("omniwa_guard_shared", path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["omniwa_guard_shared"] = mod
+            spec.loader.exec_module(mod)
+        return mod.gateway_verdict(event)
+    except Exception:
+        return {"action": "skip", "reason": "omniwa_guard_error"}  # fail closed
+
+
 def register(ctx):
     """Called by Hermes PluginManager at discovery time."""
 
@@ -190,6 +213,10 @@ def register(ctx):
         # 1) identity capture for the dashboard directory
         if _ingest_configured():
             _spawn_ingest(getattr(event, "source", None), event)
+
+        verdict = _guard_verdict(event)
+        if verdict is not None:
+            return verdict
 
         source = getattr(event, "source", None)
         chat_id = str(getattr(source, "chat_id", "") or "")

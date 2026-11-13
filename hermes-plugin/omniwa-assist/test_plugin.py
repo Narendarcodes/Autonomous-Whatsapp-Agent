@@ -157,3 +157,16 @@ def test_sender_identity_strips_jid_suffix():
     assert plugin._sender_identity(src) == {"phone": "919999999999", "lid": None}
     src = SimpleNamespace(user_id="200283032441063@lid")
     assert plugin._sender_identity(src) == {"phone": "200283032441063@lid", "lid": "200283032441063@lid"}
+
+
+# --- omniwa-guard deferral (plugin load order must not matter) ---
+
+def test_guard_skip_beats_keyword_rewrite(hooks, ingests, monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("WHATSAPP_MODE", "bot")
+    monkeypatch.setenv("OWNER_WA_PHONE", "919000000001")
+    monkeypatch.delenv("OMNIWA_GROUP_GUESTS", raising=False)
+    (tmp_path / "config.yaml").write_text("whatsapp:\n  allow_from: []\n", encoding="utf-8")
+    out = hooks["pre_gateway_dispatch"](event=_event(text="can you book a table", phone="919888877777"))
+    assert out == {"action": "skip", "reason": "omniwa_guard_group_member_not_allowlisted"}
+    assert len(ingests) == 1  # still recorded in the contacts directory

@@ -25,8 +25,17 @@ async def test_system_status_endpoint():
         assert data["status"] in ("online", "error")
 
 @pytest.mark.asyncio
-async def test_access_control_permissions(db_session, monkeypatch):
+async def test_access_control_permissions(db_session, monkeypatch, tmp_path):
     """Verify user registration, permission grants, and revocations."""
+    # grant/revoke now write the Hermes allowlist + guard blocklist: keep them in tmp
+    import app.services.bridge_config_service as bcs
+    monkeypatch.setattr(bcs.settings, "HERMES_DATA_DIR", str(tmp_path))
+    restarts = []
+    async def _fake_restart():
+        restarts.append(1)
+        return True
+    monkeypatch.setattr(bcs, "restart_hermes", _fake_restart)
+
     # Seed owner user
     owner_phone = settings.OWNER_WA_PHONE.lstrip("+")
     # The fixture phones below must never equal the owner's: .env.example ships
@@ -61,6 +70,13 @@ async def test_access_control_permissions(db_session, monkeypatch):
         # Verify DB updated
         await db_session.refresh(user)
         assert user.has_permission is False
+
+        # ...and that revoke reached WhatsApp: off the allowlist, on the blocklist
+        import json as _json, yaml as _yaml
+        wa = (_yaml.safe_load((tmp_path / "config.yaml").read_text()) or {}).get("whatsapp", {})
+        assert test_phone not in (wa.get("allow_from") or [])
+        assert test_phone in _json.loads((tmp_path / "omniwa_guard.json").read_text())["blocked"]
+        assert restarts  # hermes restarted so the bridge re-reads allow_from
 
         # 3. Grant permission to a non-existing user (should auto-create and whitelist)
         new_phone = "918888888888"

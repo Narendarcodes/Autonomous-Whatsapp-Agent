@@ -16,6 +16,7 @@ The backend container mounts the same volume (HERMES_DATA_DIR), so both files
 are writable from here. Apply = write files, then restart hermes via
 DockerManager (docker.sock).
 """
+import json
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ VALID_POLICIES = {"open", "allowlist", "disabled"}
 
 _BRIDGE_ENV_FILE = "bridge_env"
 _CONFIG_FILE = "config.yaml"
+_GUARD_FILE = "omniwa_guard.json"   # read live (no restart) by the omniwa-guard plugin
 
 
 def _clean(value: Any) -> str:
@@ -58,6 +60,33 @@ class BridgeConfigService:
     @property
     def config_path(self) -> Path:
         return self.base_dir / _CONFIG_FILE
+
+    @property
+    def guard_path(self) -> Path:
+        return self.base_dir / _GUARD_FILE
+
+    # ------------------------------------------------------------------
+    # Blocklist (omniwa-guard). Takes effect on the next message, no restart.
+    # ------------------------------------------------------------------
+    def read_guard(self) -> dict:
+        try:
+            data = json.loads(self.guard_path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def set_blocked(self, identifier: str, blocked: bool) -> list[str]:
+        ident = _clean(identifier)
+        data = self.read_guard()
+        current = [str(v) for v in (data.get("blocked") or []) if str(v).strip()]
+        current = [v for v in current if v != ident]
+        if blocked and ident:
+            current.append(ident)
+        data["blocked"] = current
+        tmp = self.guard_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(self.guard_path)
+        return current
 
     # ------------------------------------------------------------------
     # Read
@@ -193,6 +222,27 @@ async def set_bridge_config(update: dict, restart: bool = True) -> dict:
         ok = await restart_hermes()
         applied["restarted"] = ok
     return applied
+
+
+async def set_sender_access(identifier: str, allowed: bool, restart: bool = True) -> dict:
+    """Make the dashboard's grant/revoke actually reach WhatsApp.
+
+    allowed=True  -> add to Hermes allow_from, remove from the guard blocklist
+    allowed=False -> remove from allow_from AND blocklist it. The blocklist is
+                     enforced on the very next message; allow_from needs the
+                     hermes restart.
+    """
+    svc = BridgeConfigService()
+    ident = _clean(identifier)
+    current = list((svc._read_whatsapp_section().get("allow_from")) or [])
+    if allowed:
+        new = list(dict.fromkeys([*current, ident]))
+    else:
+        new = [v for v in current if _clean(v) != ident]
+    svc.set_blocked(ident, blocked=not allowed)
+    if new == current:
+        return {"allow_from": new, "restarted": False}
+    return await set_bridge_config({"allow_from": new}, restart=restart)
 
 
 bridge_config_service = BridgeConfigService()
