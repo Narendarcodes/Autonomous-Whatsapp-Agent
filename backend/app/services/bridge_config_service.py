@@ -73,12 +73,19 @@ class BridgeConfigService:
                     break
 
         wa = self._read_whatsapp_section()
+        # The dashboard shows ONE combined list; Hermes keeps DM senders in
+        # allow_from and group JIDs in group_allow_from. Merge for display.
+        combined: list[str] = []
+        for v in [*(wa.get("allow_from") or []), *(wa.get("group_allow_from") or [])]:
+            v = str(v)
+            if v not in combined:
+                combined.append(v)
         return {
             "mode": _clean(mode),
             "dm_policy": _clean(wa.get("dm_policy")) or "allowlist",
             "group_policy": _clean(wa.get("group_policy")) or "allowlist",
             "require_mention": bool(wa.get("require_mention", True)),
-            "allow_from": [str(v) for v in (wa.get("allow_from") or [])],
+            "allow_from": combined,
         }
 
     def _read_whatsapp_section(self) -> dict:
@@ -123,7 +130,13 @@ class BridgeConfigService:
             extra_wa["require_mention"] = bool(update["require_mention"])
         if update.get("allow_from") is not None:
             cleaned = [_clean(v) for v in update["allow_from"]]
-            extra_wa["allow_from"] = [v for v in cleaned if v]
+            entries = list(dict.fromkeys(v for v in cleaned if v))
+            extra_wa["allow_from"] = entries
+            # Hermes gates groups (group_policy=allowlist) on group_allow_from
+            # (WHATSAPP_GROUP_ALLOWED_USERS), NOT allow_from. Without this,
+            # every allowlisted group is silently dropped at the bridge with
+            # reason=group_policy_rejected.
+            extra_wa["group_allow_from"] = [v for v in entries if v.endswith("@g.us")]
 
         if wa_update or extra_wa:
             current = self._read_whatsapp_section()

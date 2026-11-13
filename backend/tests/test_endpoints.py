@@ -105,8 +105,9 @@ async def test_unauthenticated_api_redirect():
         assert resp2.headers["location"] == "/login"
 
 @pytest.mark.asyncio
-async def test_login_success():
+async def test_login_success(monkeypatch):
     """Verify submitting the correct password returns a session cookie and redirects."""
+    monkeypatch.setattr(settings, "ADMIN_PASSWORD", "a-strong-test-password")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # Wrong password redirects to /login?error=true
         resp = await ac.post("/login", data={"password": "wrong_password"})
@@ -118,6 +119,16 @@ async def test_login_success():
         assert resp2.status_code == 303
         assert resp2.headers["location"] == "/dashboard"
         assert "naru_session" in resp2.cookies
+
+
+@pytest.mark.asyncio
+async def test_default_admin_password_is_rejected(monkeypatch):
+    """The shipped default 'admin123' must never open the dashboard."""
+    monkeypatch.setattr(settings, "ADMIN_PASSWORD", "admin123")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/login", data={"password": "admin123"})
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login?error=true"
 
 
 @pytest.mark.asyncio

@@ -55,9 +55,15 @@ def _active_chat_is_whatsapp_group() -> bool:
 
         chat_id = get_session_env("HERMES_SESSION_CHAT_ID") or ""
         session_key = get_session_env("HERMES_SESSION_KEY") or ""
+        chat_type = get_session_env("HERMES_SESSION_CHAT_TYPE") or ""
+        platform = get_session_env("HERMES_SESSION_PLATFORM") or ""
     except Exception:
         return False
     if chat_id.strip().endswith("@g.us"):
+        return True
+    # Belt and braces: if the gateway ever reports group chats under another
+    # id shape, the explicit chat_type still keeps privacy mode ON.
+    if chat_type.strip().lower() == "group" and "whatsapp" in platform.lower():
         return True
     return ":whatsapp:group:" in f":{session_key}"
 

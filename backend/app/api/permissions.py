@@ -16,10 +16,20 @@ logger = get_logger(__name__)
 
 
 async def _get_owner(db: AsyncSession) -> User | None:
-    """Get the bot owner user."""
-    result = await db.execute(
-        select(User).where(User.wa_phone == settings.OWNER_WA_PHONE.lstrip("+"))
-    )
+    """Get the bot owner user.
+
+    Prefer the configured OWNER_WA_PHONE, but fall back to the row flagged
+    is_owner: when OWNER_WA_PHONE is unset (or was normalised differently)
+    every permissions endpoint used to 403 "Owner not found" even though an
+    owner existed.
+    """
+    owner_phone = (settings.OWNER_WA_PHONE or "").lstrip("+")
+    if owner_phone:
+        result = await db.execute(select(User).where(User.wa_phone == owner_phone))
+        owner = result.scalar_one_or_none()
+        if owner:
+            return owner
+    result = await db.execute(select(User).where(User.is_owner == True).limit(1))  # noqa: E712
     return result.scalar_one_or_none()
 
 

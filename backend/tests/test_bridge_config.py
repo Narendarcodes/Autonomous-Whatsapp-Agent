@@ -206,3 +206,17 @@ class TestModuleLevelHelpers:
         assert restarted == [True]
         eff = await svc_mod.get_bridge_config(default_mode="self-chat")
         assert eff["mode"] == "bot"
+
+
+# --- regression: Hermes gates groups on group_allow_from (2026-11) ---
+
+async def test_group_jids_are_written_to_group_allow_from(tmp_path):
+    import yaml
+    from app.services.bridge_config_service import BridgeConfigService
+
+    svc = BridgeConfigService(base_dir=str(tmp_path))
+    await svc.apply_update({"allow_from": ["916300354385", "120363406613211534@g.us"]})
+    wa = yaml.safe_load((tmp_path / "config.yaml").read_text())["whatsapp"]
+    assert wa["group_allow_from"] == ["120363406613211534@g.us"]
+    eff = await svc.get_effective()
+    assert eff["allow_from"] == ["916300354385", "120363406613211534@g.us"]  # one list in the UI
